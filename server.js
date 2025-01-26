@@ -10,11 +10,14 @@ let connection;
 /*Note to future me: 
     - wont run locally need google auth
     - will run on google run when deployed
-    - tedious bug on server and port (not my fault tbh)
+    - tedious bug on server and port
+    - dont forget to save and push!
 */
 
 /* TO DO: 
-    -
+    - implement middleware 
+    - Implement specific, controlled endpoints
+    Note: Mas better if during compenent connection phase na buhaton kanang duha.
 */
 
 async function initializeDatabase() {
@@ -58,7 +61,7 @@ app.use(bodyParser.json());
 app.get("/", (req, res) => {
     res.json({
         status: "online",
-        message: "Database Server is running"
+        message: "Server is running na mga neighbors"
     });
 });
 
