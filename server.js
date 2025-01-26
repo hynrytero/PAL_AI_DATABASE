@@ -7,15 +7,25 @@ const bcrypt = require("bcryptjs");
 let connector;
 let connection;
 
+/*Note to future me: 
+    - wont run locally need google auth
+    - will run on google run when deployed
+    - tedious bug on server and port (not my fault tbh)
+*/
+
+/* TO DO: 
+    -
+*/
+
 async function initializeDatabase() {
     connector = new Connector();
     const clientOpts = await connector.getTediousOptions({
-        instanceConnectionName: 'adept-shade-448605-u0:asia-southeast1:pal-ai',
+        instanceConnectionName: process.env.DB_SERVER, 
         ipType: 'PUBLIC',
     });
 
     connection = new Connection({
-        server: '0.0.0.0', // Note: This is due to a tedious driver bug
+        server: '0.0.0.0', 
         authentication: {
             type: 'default',
             options: {
@@ -25,7 +35,7 @@ async function initializeDatabase() {
         },
         options: {
             ...clientOpts,
-            port: 9999, // Note: This is due to a tedious driver bug
+            port: 9999, 
             database: process.env.DB_NAME,
         },
     });
@@ -61,10 +71,16 @@ app.get('/check', async (req, res) => {
             }
         });
 
+        let currentDate = null;
+        request.on('row', (columns) => {
+            currentDate = columns[0].value;
+        });
+
         request.on('requestCompleted', () => {
             res.status(200).json({ 
                 status: 'Connected', 
-                message: 'Database connection successful' 
+                message: 'Database connection successful',
+                currentDate: currentDate ? currentDate.toISOString() : null
             });
         });
 
@@ -201,17 +217,17 @@ app.post("/login", async (req, res) => {
 async function startServer() {
     try {
         await initializeDatabase();
-        const PORT = process.env.PORT || 5000;
+        const PORT = process.env.PORT;
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
     } catch (err) {
-        console.error("Failed to connect to database:", err);
+        console.error("Failed to connect to database server:", err);
         process.exit(1);
     }
 }
 
-// Graceful shutdown
+// shutdown
 process.on('SIGINT', () => {
     if (connection) {
         connection.close();
