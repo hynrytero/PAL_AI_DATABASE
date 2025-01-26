@@ -1,13 +1,14 @@
+require('dotenv').config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const sql = require("mssql");
 const bcrypt = require("bcryptjs");
 
 const sqlConfig = {
-    user: 'sqlserver',
-    password: 'pal-ai',
-    server: '35.197.143.156',
-    database: 'PAL-AI',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER, 
+    database: process.env.DB_NAME,
     options: {
         trustServerCertificate: true,
         encrypt: false
@@ -21,12 +22,11 @@ app.use(bodyParser.json());
 app.get("/", (req, res) => {
     res.json({
         status: "online",
-        message: "Database Server is running mga neighbor."
-
+        message: "Database Server is running"
     });
 });
 
-// Check Connection Enpoint
+// Check Connection Endpoint
 app.get('/check', async (req, res) => {
     try {
         await sql.connect(sqlConfig);
@@ -45,7 +45,7 @@ app.get('/check', async (req, res) => {
     }
 });
 
-// Signup endpoint
+// Signup endpoint (similar to previous implementation)
 app.post("/signup", async (req, res) => {
     const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
 
@@ -102,7 +102,7 @@ app.post("/signup", async (req, res) => {
     }
 });
 
-// Login endpoint
+// Login endpoint (similar to previous implementation)
 app.post("/login", async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -137,7 +137,7 @@ app.post("/login", async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
