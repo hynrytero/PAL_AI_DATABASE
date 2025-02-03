@@ -72,41 +72,17 @@ const executeQuery = async (query, params = []) => {
     return new Promise((resolve, reject) => {
         const request = new Request(query, (err, rowCount, rows) => {
             if (err) {
-                console.error('Query Execution Error:', {
-                    query,
-                    params,
-                    errorMessage: err.message,
-                    errorCode: err.code
-                });
                 reject(err);
             } else {
-                // Add more verbose logging
-                console.log('Query Execution Success:', {
-                    query,
-                    rowCount,
-                    rowsReturned: rows ? rows.length : 0
-                });
                 resolve({ rowCount, rows });
             }
         });
 
-        // Enhanced parameter logging
         params.forEach(param => {
-            console.log('Adding Parameter:', {
-                name: param.name,
-                type: param.type,
-                // Mask sensitive values
-                value: param.name.toLowerCase().includes('password') ? '****' : param.value
-            });
             request.addParameter(param.name, param.type, param.value);
         });
         
-        try {
-            connection.execSql(request);
-        } catch (execError) {
-            console.error('SQL Execution Catch Error:', execError);
-            reject(execError);
-        }
+        connection.execSql(request);
     });
 };
 
@@ -176,48 +152,33 @@ app.get('/check', async (req, res) => {
             });
         }
 
-        console.log('Attempting database query'); // Added logging
+        const request = new Request('SELECT GETUTCDATE() as currentDate', (err, rowCount, rows) => {
+            if (err) {
+                console.error('Error executing database query:', err);
+                return res.status(500).json({
+                    status: 'Failed',
+                    message: 'Database connection error',
+                    error: err.message
+                });
+            }
 
-        const result = await executeQuery('SELECT GETUTCDATE() as currentDate');
+            if (rowCount === 0 || !rows || rows.length === 0) {
+                return res.status(500).json({
+                    status: 'Failed',
+                    message: 'No rows returned from database',
+                    details: 'Check database connection and query'
+                });
+            }
 
-        console.log('Query Result:', JSON.stringify(result, null, 2)); // Detailed logging
-
-        // More robust result checking
-        if (!result || !result.rows) {
-            return res.status(500).json({
-                status: 'Failed',
-                message: 'Unexpected query result structure',
-                rawResult: result
+            const currentDate = rows[0][0].value;
+            res.status(200).json({
+                status: 'Connected',
+                message: 'Database connection successful',
+                currentDate
             });
-        }
-
-        if (result.rows.length === 0) {
-            return res.status(500).json({
-                status: 'Failed',
-                message: 'No rows returned from database',
-                details: 'Check database connection and query'
-            });
-        }
-
-        // Additional debug logging
-        console.log('Row details:', result.rows[0]);
-
-        // More flexible row access
-        const currentDate = result.rows[0][0] ? result.rows[0][0].value : null;
-
-        if (!currentDate) {
-            return res.status(500).json({
-                status: 'Failed',
-                message: 'Could not retrieve current date',
-                rowStructure: result.rows[0]
-            });
-        }
-
-        res.status(200).json({
-            status: 'Connected',
-            message: 'Database connection successful',
-            currentDate: currentDate
         });
+
+        connection.execSql(request);
     } catch (err) {
         console.error('Full error details:', err);
         res.status(500).json({
