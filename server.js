@@ -82,7 +82,6 @@ app.use(bodyParser.json());
 // Storage setup
 const storage = new Storage({
     projectId: process.env.GOOGLE_CLOUD_PROJECT,
-    keyFilename: process.env.GOOGLE_CLOUD_KEYFILE
 });
 const bucket = storage.bucket(process.env.BUCKET_NAME);
 
