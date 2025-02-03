@@ -133,6 +133,15 @@ app.get("/", (req, res) => {
     });
 });
 
+app.get('/env-debug', (req, res) => {
+    res.json({
+        DB_SERVER: process.env.DB_SERVER ? 'SET' : 'UNSET',
+        DB_USER: process.env.DB_USER ? 'SET' : 'UNSET',
+        DB_NAME: process.env.DB_NAME ? 'SET' : 'UNSET',
+        GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT ? 'SET' : 'UNSET'
+    });
+});
+
 // Check Connection Endpoint
 app.get('/check', async (req, res) => {
     try {
