@@ -142,13 +142,24 @@ app.get('/check', async (req, res) => {
                 message: 'Database connection not established'
             });
         }
-        
+
         const result = await executeQuery('SELECT GETUTCDATE() as currentDate');
-        res.status(200).json({
-            status: 'Connected',
-            message: 'Database connection successful',
-            currentDate: result.rows[0][0].value
-        });
+
+        // Check if result.rows contains data and structure
+        if (result && result.rows && result.rows.length > 0) {
+            // Accessing first row and the first column
+            const currentDate = result.rows[0]['currentDate'];
+            res.status(200).json({
+                status: 'Connected',
+                message: 'Database connection successful',
+                currentDate: currentDate
+            });
+        } else {
+            res.status(500).json({
+                status: 'Failed',
+                message: 'No data returned from the database'
+            });
+        }
     } catch (err) {
         res.status(500).json({
             status: 'Failed',
@@ -157,6 +168,7 @@ app.get('/check', async (req, res) => {
         });
     }
 });
+
 
 // Signup endpoint
 app.post("/signup", async (req, res) => {
