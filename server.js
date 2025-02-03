@@ -1,65 +1,74 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const { Connection, Request } = require('tedious');
+const { Connection, Request, TYPES: sql } = require('tedious');
 const { Connector } = require('@google-cloud/cloud-sql-connector');
 const bcrypt = require("bcryptjs");
-const { Storage } = require('@google-cloud/storage');   // add this to main repo
-const multer = require('multer');                       // npm install @google-cloud/storage multer
+const { Storage } = require('@google-cloud/storage');
+const multer = require('multer');
+
+const app = express();
+app.use(bodyParser.json());
 
 let connector;
 let connection;
+let isDbConnected = false;
 
-/*Note to future me: 
-    - wont run locally need google auth
-    - will run on google run when deployed
-    - tedious bug on server and port
-    - dont forget to save and push!
-*/
-
-/* TO DO: 
-    - implement middleware 
-    - Implement specific, controlled endpoints
-    Note: Mas better if during compenent connection phase na buhaton kanang duha.
-*/
-
-// MUST FIX THE SIGNUP VALIDATION CODE
-
+// Initialize database connection
 async function initializeDatabase() {
-    connector = new Connector();
-    const clientOpts = await connector.getTediousOptions({
-        instanceConnectionName: process.env.DB_SERVER, 
-        ipType: 'PUBLIC',
-    });
-
-    connection = new Connection({
-        server: '0.0.0.0', 
-        authentication: {
-            type: 'default',
-            options: {
-                userName: process.env.DB_USER,
-                password: process.env.DB_PASSWORD,
-            },
-        },
-        options: {
-            ...clientOpts,
-            port: 9999, 
-            database: process.env.DB_NAME,
-        },
-    });
-
-    return new Promise((resolve, reject) => {
-        connection.connect(err => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(connection);
-            }
+    try {
+        connector = new Connector();
+        const clientOpts = await connector.getTediousOptions({
+            instanceConnectionName: process.env.DB_SERVER,
+            ipType: 'PUBLIC',
         });
-    });
+
+        connection = new Connection({
+            server: '0.0.0.0',
+            authentication: {
+                type: 'default',
+                options: {
+                    userName: process.env.DB_USER,
+                    password: process.env.DB_PASSWORD,
+                },
+            },
+            options: {
+                ...clientOpts,
+                port: 9999,
+                database: process.env.DB_NAME,
+                connectTimeout: 30000, // 30 second timeout
+                requestTimeout: 30000,
+                retry: {
+                    max: 3
+                }
+            },
+        });
+
+        return new Promise((resolve, reject) => {
+            connection.connect(err => {
+                if (err) {
+                    console.error('Database connection error:', err);
+                    isDbConnected = false;
+                    resolve(false); // Don't reject, just return false
+                } else {
+                    console.log('Database connected successfully');
+                    isDbConnected = true;
+                    resolve(true);
+                }
+            });
+        });
+    } catch (err) {
+        console.error('Database initialization error:', err);
+        isDbConnected = false;
+        return false;
+    }
 }
 
-// Helper function to execute SQL queries
-const executeQuery = (query, params = []) => {
+// Modified executeQuery to handle connection issues
+const executeQuery = async (query, params = []) => {
+    if (!isDbConnected) {
+        throw new Error('Database connection not established');
+    }
+
     return new Promise((resolve, reject) => {
         const request = new Request(query, (err, rowCount, rows) => {
             if (err) {
@@ -72,12 +81,10 @@ const executeQuery = (query, params = []) => {
         params.forEach(param => {
             request.addParameter(param.name, param.type, param.value);
         });
+        
         connection.execSql(request);
     });
 };
-
-const app = express();
-app.use(bodyParser.json());
 
 // Storage setup
 const storage = new Storage({
@@ -117,17 +124,25 @@ app.post('/upload', multer().single('image'), async (req, res) => {
     }
 });
 
-// Home endpoint
+// Health check endpoint
 app.get("/", (req, res) => {
     res.json({
         status: "online",
-        message: "Server is running"
+        message: "Server is running",
+        database: isDbConnected ? "connected" : "disconnected"
     });
 });
 
 // Check Connection Endpoint
 app.get('/check', async (req, res) => {
     try {
+        if (!isDbConnected) {
+            return res.status(503).json({
+                status: 'Disconnected',
+                message: 'Database connection not established'
+            });
+        }
+        
         const result = await executeQuery('SELECT GETUTCDATE() as currentDate');
         res.status(200).json({
             status: 'Connected',
@@ -146,6 +161,10 @@ app.get('/check', async (req, res) => {
 // Signup endpoint
 app.post("/signup", async (req, res) => {
     try {
+        if (!isDbConnected) {
+            return res.status(503).json({ message: "Database service unavailable" });
+        }
+
         const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
 
         // Validate required fields
@@ -186,7 +205,7 @@ app.post("/signup", async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // Insert user
-        const DEFAULT_ROLE_ID = 1; // ilisan for admin and user identifier
+        const DEFAULT_ROLE_ID = 1;
         const userResult = await executeQuery(
             `INSERT INTO user_credentials (username, role_id, password)
              VALUES (@username, @roleId, @hashedPassword);
@@ -225,6 +244,10 @@ app.post("/signup", async (req, res) => {
 // Login endpoint
 app.post("/login", async (req, res) => {
     try {
+        if (!isDbConnected) {
+            return res.status(503).json({ message: "Database service unavailable" });
+        }
+
         const { username, password } = req.body;
 
         if (!username || !password) {
@@ -268,6 +291,10 @@ app.post("/login", async (req, res) => {
 // Scan endpoint
 app.post("/save", async (req, res) => {
     try {
+        if (!isDbConnected) {
+            return res.status(503).json({ message: "Database service unavailable" });
+        }
+
         const { user_profile_id, disease_prediction, disease_prediction_score, scan_image } = req.body;
 
         const missingFields = [];
@@ -319,6 +346,10 @@ app.post("/save", async (req, res) => {
 // Disease info endpoint
 app.get('/disease-info/:classNumber', async (req, res) => {
     try {
+        if (!isDbConnected) {
+            return res.status(503).json({ message: "Database service unavailable" });
+        }
+
         const { classNumber } = req.params;
 
         const result = await executeQuery(
@@ -358,33 +389,47 @@ app.get('/disease-info/:classNumber', async (req, res) => {
     }
 });
 
-// Startup function
-async function startServer() {
-    try {
-        await initializeDatabase();
-        const PORT = process.env.PORT || 3000;
-        app.listen(PORT, () => {
-            console.log(`Server running on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error("Failed to connect to database server:", err);
-        process.exit(1);
-    }
-}
-
-// Shutdown handler
-process.on('SIGINT', async () => {
-    try {
-        if (connection) {
-            await connection.close();
-        }
-        if (connector) {
-            await connector.close();
-        }
-    } catch (err) {
-        console.error("Error during shutdown:", err);
-    }
-    process.exit();
+// Start server immediately
+const PORT = process.env.PORT || 8080;
+const server = app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
 
-startServer();
+// Initialize database connection in the background
+initializeDatabase().then(connected => {
+    if (!connected) {
+        console.log('Server running without database connection. Will retry connection in background.');
+        // You could implement reconnection logic here if needed
+    }
+}).catch(err => {
+    console.error('Initial database connection failed:', err);
+    // Server continues running even if database connection fails
+});
+
+// Graceful shutdown
+const shutdown = async () => {
+    console.log('Shutting down gracefully...');
+    server.close(async () => {
+        try {
+            if (connection) {
+                await connection.close();
+            }
+            if (connector) {
+                await connector.close();
+            }
+        } catch (err) {
+            console.error("Error during shutdown:", err);
+        } finally {
+            process.exit(0);
+        }
+    });
+
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+    }, 30000);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
