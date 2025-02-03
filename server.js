@@ -48,7 +48,7 @@ async function initializeDatabase() {
                 if (err) {
                     console.error('Database connection error:', err);
                     isDbConnected = false;
-                    resolve(false); // Don't reject, just return false
+                    resolve(false); 
                 } else {
                     console.log('Database connected successfully');
                     isDbConnected = true;
@@ -143,32 +143,58 @@ app.get('/check', async (req, res) => {
             });
         }
 
+        console.log('Attempting database query'); // Added logging
+
         const result = await executeQuery('SELECT GETUTCDATE() as currentDate');
 
-        // Check if result.rows contains data and structure
-        if (result && result.rows && result.rows.length > 0) {
-            // Accessing first row and the first column
-            const currentDate = result.rows[0]['currentDate'];
-            res.status(200).json({
-                status: 'Connected',
-                message: 'Database connection successful',
-                currentDate: currentDate
-            });
-        } else {
-            res.status(500).json({
+        console.log('Query Result:', JSON.stringify(result, null, 2)); // Detailed logging
+
+        // More robust result checking
+        if (!result || !result.rows) {
+            return res.status(500).json({
                 status: 'Failed',
-                message: 'No data returned from the database'
+                message: 'Unexpected query result structure',
+                rawResult: result
             });
         }
+
+        if (result.rows.length === 0) {
+            return res.status(500).json({
+                status: 'Failed',
+                message: 'No rows returned from database',
+                details: 'Check database connection and query'
+            });
+        }
+
+        // Additional debug logging
+        console.log('Row details:', result.rows[0]);
+
+        // More flexible row access
+        const currentDate = result.rows[0][0] ? result.rows[0][0].value : null;
+
+        if (!currentDate) {
+            return res.status(500).json({
+                status: 'Failed',
+                message: 'Could not retrieve current date',
+                rowStructure: result.rows[0]
+            });
+        }
+
+        res.status(200).json({
+            status: 'Connected',
+            message: 'Database connection successful',
+            currentDate: currentDate
+        });
     } catch (err) {
+        console.error('Full error details:', err);
         res.status(500).json({
             status: 'Failed',
             message: 'Database connection error',
-            error: err.message
+            error: err.message,
+            stack: err.stack
         });
     }
 });
-
 
 // Signup endpoint
 app.post("/signup", async (req, res) => {
