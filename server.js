@@ -72,17 +72,41 @@ const executeQuery = async (query, params = []) => {
     return new Promise((resolve, reject) => {
         const request = new Request(query, (err, rowCount, rows) => {
             if (err) {
+                console.error('Query Execution Error:', {
+                    query,
+                    params,
+                    errorMessage: err.message,
+                    errorCode: err.code
+                });
                 reject(err);
             } else {
+                // Add more verbose logging
+                console.log('Query Execution Success:', {
+                    query,
+                    rowCount,
+                    rowsReturned: rows ? rows.length : 0
+                });
                 resolve({ rowCount, rows });
             }
         });
 
+        // Enhanced parameter logging
         params.forEach(param => {
+            console.log('Adding Parameter:', {
+                name: param.name,
+                type: param.type,
+                // Mask sensitive values
+                value: param.name.toLowerCase().includes('password') ? '****' : param.value
+            });
             request.addParameter(param.name, param.type, param.value);
         });
         
-        connection.execSql(request);
+        try {
+            connection.execSql(request);
+        } catch (execError) {
+            console.error('SQL Execution Catch Error:', execError);
+            reject(execError);
+        }
     });
 };
 
