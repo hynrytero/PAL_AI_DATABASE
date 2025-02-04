@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { Connection, Request } = require('tedious');
+const { Connection, Request, TYPES } = require('tedious');
 const { Connector } = require('@google-cloud/cloud-sql-connector');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
@@ -116,9 +116,9 @@ app.post("/signup", async (req, res) => {
                 SELECT SCOPE_IDENTITY() AS userId;
             `;
             const userParams = [
-                { type: 'NVarChar', value: username },
-                { type: 'Int', value: DEFAULT_ROLE_ID },
-                { type: 'NVarChar', value: hashedPassword }
+                { type: TYPES.NVarChar, value: username },
+                { type: TYPES.Int, value: DEFAULT_ROLE_ID },
+                { type: TYPES.NVarChar, value: hashedPassword }
             ];
             const userResult = await executeQuery(userInsertQuery, userParams);
             const userId = userResult[0][0].value;
@@ -130,13 +130,13 @@ app.post("/signup", async (req, res) => {
                 ) VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
             `;
             const profileParams = [
-                { type: 'Int', value: userId },
-                { type: 'NVarChar', value: firstname },
-                { type: 'NVarChar', value: lastname },
-                { type: 'Int', value: age ? parseInt(age, 10) : null },
-                { type: 'NVarChar', value: gender },
-                { type: 'NVarChar', value: email },
-                { type: 'NVarChar', value: mobilenumber }
+                { type: TYPES.Int, value: userId },
+                { type: TYPES.NVarChar, value: firstname },
+                { type: TYPES.NVarChar, value: lastname },
+                { type: TYPES.Int, value: age ? parseInt(age, 10) : null },
+                { type: TYPES.NVarChar, value: gender },
+                { type: TYPES.NVarChar, value: email },
+                { type: TYPES.NVarChar, value: mobilenumber }
             ];
             await executeQuery(profileInsertQuery, profileParams);
 
@@ -161,7 +161,7 @@ app.post("/signup", async (req, res) => {
     }
 });
 
-// Login endpoint (similar modification pattern)
+// Login endpoint
 app.post("/login", async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -172,7 +172,7 @@ app.post("/login", async (req, res) => {
             WHERE username = @param0
         `;
         const params = [
-            { type: 'NVarChar', value: username }
+            { type: TYPES.NVarChar, value: username }
         ];
 
         const result = await executeQuery(query, params);
@@ -285,10 +285,10 @@ app.post("/save", async (req, res) => {
         `;
 
         const leafScanParams = [
-            { type: 'VarChar', value: user_profile_id },
-            { type: 'Int', value: disease_prediction },
-            { type: 'Float', value: disease_prediction_score },
-            { type: 'VarChar', value: scan_image }
+            { type: TYPES.VarChar, value: user_profile_id.toString() },
+            { type: TYPES.Int, value: parseInt(disease_prediction, 10) },
+            { type: TYPES.Decimal, value: parseFloat(disease_prediction_score) },
+            { type: TYPES.VarChar, value: scan_image }
         ];
 
         try {
@@ -305,7 +305,7 @@ app.post("/save", async (req, res) => {
             `;
 
             const scanHistoryParams = [
-                { type: 'Int', value: rice_leaf_scan_id }
+                { type: TYPES.Int, value: rice_leaf_scan_id }
             ];
 
             await executeQuery(scanHistoryQuery, scanHistoryParams);
@@ -357,7 +357,7 @@ app.get('/disease-info/:classNumber', async (req, res) => {
         `;
         
         const params = [
-            { type: 'Int', value: parseInt(classNumber, 10) }
+            { type: TYPES.Int, value: parseInt(classNumber, 10) }
         ];
         
         const result = await executeQuery(query, params);
