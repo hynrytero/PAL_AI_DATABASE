@@ -262,7 +262,10 @@ app.post("/save", async (req, res) => {
         if (!scan_image) missingFields.push('scan_image');
         if (!user_profile_id) missingFields.push('user_profile_id');
         if (!disease_prediction) missingFields.push('disease_prediction');
-        if (!disease_prediction_score) missingFields.push('disease_prediction_score');
+        if (disease_prediction_score === null || disease_prediction_score === undefined) 
+        {
+            missingFields.push('disease_prediction_score');
+        }
 
         if (missingFields.length > 0) {
             return res.status(400).json({ 
