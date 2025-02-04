@@ -287,7 +287,7 @@ app.post("/save", async (req, res) => {
         const leafScanParams = [
             { type: TYPES.VarChar, value: user_profile_id.toString() },
             { type: TYPES.Int, value: parseInt(disease_prediction, 10) },
-            { type: TYPES.Decimal, value: parseFloat(disease_prediction_score) },
+            { type: TYPES.Float, value: parseFloat(disease_prediction_score) },
             { type: TYPES.VarChar, value: scan_image }
         ];
 
