@@ -5,6 +5,7 @@ const { Connector } = require('@google-cloud/cloud-sql-connector');
 const bcrypt = require("bcryptjs");
 const { Storage } = require('@google-cloud/storage');
 const multer = require('multer');
+require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.json());
@@ -35,7 +36,7 @@ async function initializeDatabase() {
                 ...clientOpts,
                 port: 9999,
                 database: process.env.DB_NAME,
-                connectTimeout: 30000, // 30 second timeout
+                connectTimeout: 30000,
                 requestTimeout: 30000,
                 retry: {
                     max: 3
@@ -152,33 +153,48 @@ app.get('/check', async (req, res) => {
             });
         }
 
-        const request = new Request('SELECT GETUTCDATE() as currentDate', (err, rowCount, rows) => {
-            if (err) {
-                console.error('Error executing database query:', err);
-                return res.status(500).json({
-                    status: 'Failed',
-                    message: 'Database connection error',
-                    error: err.message
-                });
-            }
+        console.log('Attempting database query'); // Added logging
 
-            if (rowCount === 0 || !rows || rows.length === 0) {
-                return res.status(500).json({
-                    status: 'Failed',
-                    message: 'No rows returned from database',
-                    details: 'Check database connection and query'
-                });
-            }
+        const result = await executeQuery('SELECT GETUTCDATE() as currentDate');
 
-            const currentDate = rows[0][0].value;
-            res.status(200).json({
-                status: 'Connected',
-                message: 'Database connection successful',
-                currentDate
+        console.log('Query Result:', JSON.stringify(result, null, 2)); // Detailed logging
+
+        // More robust result checking
+        if (!result || !result.rows) {
+            return res.status(500).json({
+                status: 'Failed',
+                message: 'Unexpected query result structure',
+                rawResult: result
             });
-        });
+        }
 
-        connection.execSql(request);
+        if (result.rows.length === 0) {
+            return res.status(500).json({
+                status: 'Failed',
+                message: 'No rows returned from database',
+                details: 'Check database connection and query'
+            });
+        }
+
+        // Additional debug logging
+        console.log('Row details:', result.rows[0]);
+
+        // More flexible row access
+        const currentDate = result.rows[0][0] ? result.rows[0][0].value : null;
+
+        if (!currentDate) {
+            return res.status(500).json({
+                status: 'Failed',
+                message: 'Could not retrieve current date',
+                rowStructure: result.rows[0]
+            });
+        }
+
+        res.status(200).json({
+            status: 'Connected',
+            message: 'Database connection successful',
+            currentDate: currentDate
+        });
     } catch (err) {
         console.error('Full error details:', err);
         res.status(500).json({
