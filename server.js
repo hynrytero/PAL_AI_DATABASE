@@ -226,8 +226,8 @@ app.post("/complete-signup", async (req, res) => {
             BEGIN TRANSACTION;
             
             -- Insert user credentials
-            INSERT INTO user_credentials (username, role_id, password, is_verified)
-            VALUES (@param0, @param1, @param2, @param3);
+            INSERT INTO user_credentials (username, role_id, password)
+            VALUES (@param0, @param1, @param2);
             
             -- Get the new user ID
             DECLARE @newUserId INT = SCOPE_IDENTITY();
@@ -236,7 +236,7 @@ app.post("/complete-signup", async (req, res) => {
             INSERT INTO user_profiles (
                 user_id, firstname, lastname, age, gender, email, mobile_number
             ) VALUES (
-                @newUserId, @param4, @param5, @param6, @param7, @param8, @param9
+                @newUserId, @param3, @param4, @param5, @param6, @param7, @param8
             );
             
             COMMIT TRANSACTION;
@@ -248,7 +248,6 @@ app.post("/complete-signup", async (req, res) => {
             { type: TYPES.NVarChar, value: tempRegData.username },
             { type: TYPES.Int, value: DEFAULT_ROLE_ID },
             { type: TYPES.NVarChar, value: hashedPassword },
-            { type: TYPES.Bit, value: 1 }, // Directly verified
             { type: TYPES.NVarChar, value: tempRegData.firstname },
             { type: TYPES.NVarChar, value: tempRegData.lastname },
             { type: TYPES.Int, value: tempRegData.age ? parseInt(tempRegData.age, 10) : null },
