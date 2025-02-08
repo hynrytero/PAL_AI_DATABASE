@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 const { Storage } = require('@google-cloud/storage');
 const multer = require('multer');
+const nodemailer = require('nodemailer');
+const rateLimit = require('express-rate-limit');
 
 // Initialize Google Cloud Storage
 const storage = new Storage({
@@ -96,70 +98,304 @@ function executeQuery(query, params = []) {
     });
 }
 
-// Signup endpoint
-app.post("/signup", async (req, res) => {
+const requestLimiter = rateLimit({ // try to apply this middleware
+    windowMs: 10 * 60 * 1000, 
+    max: 30,
+    message: 'Too many request attempts, please try again later'
+});
+
+// Email configuration
+const transporter = nodemailer.createTransport({
+    service: process.env.EMAIL_SERVICE,
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+    }
+});
+
+// Verification Codes Storage (In a real app, use a distributed cache like Redis)
+const verificationCodes = new Map();
+
+// Generate a 6-digit verification code
+function generateVerificationCode() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Initial Signup Endpoint (Pre-registration)
+app.post("/pre-signup", requestLimiter, async (req, res) => {
     try {
         const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
 
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        // Check if username or email already exists in user_credentials
+        const existingUserQuery = `
+            SELECT 1 FROM user_credentials 
+            WHERE username = @param0 OR 
+            EXISTS (
+                SELECT 1 FROM user_profiles 
+                WHERE email = @param1
+            )
+        `;
+        const existingUserParams = [
+            { type: TYPES.NVarChar, value: username },
+            { type: TYPES.NVarChar, value: email }
+        ];
 
-        // Start transaction
-        const DEFAULT_ROLE_ID = 1;
-
-        try {
-            // Insert user credentials
-            const userInsertQuery = `
-                INSERT INTO user_credentials (username, role_id, password)
-                VALUES (@param0, @param1, @param2);
-                SELECT SCOPE_IDENTITY() AS userId;
-            `;
-            const userParams = [
-                { type: TYPES.NVarChar, value: username },
-                { type: TYPES.Int, value: DEFAULT_ROLE_ID },
-                { type: TYPES.NVarChar, value: hashedPassword }
-            ];
-            const userResult = await executeQuery(userInsertQuery, userParams);
-            const userId = userResult[0][0].value;
-
-            // Insert user profile
-            const profileInsertQuery = `
-                INSERT INTO user_profiles (
-                    user_id, firstname, lastname, age, gender, email, mobile_number
-                ) VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
-            `;
-            const profileParams = [
-                { type: TYPES.Int, value: userId },
-                { type: TYPES.NVarChar, value: firstname },
-                { type: TYPES.NVarChar, value: lastname },
-                { type: TYPES.Int, value: age ? parseInt(age, 10) : null },
-                { type: TYPES.NVarChar, value: gender },
-                { type: TYPES.NVarChar, value: email },
-                { type: TYPES.NVarChar, value: mobilenumber }
-            ];
-            await executeQuery(profileInsertQuery, profileParams);
-
-            res.status(201).json({ 
-                message: "User registered successfully", 
-                userId 
-            });
-
-        } catch (err) {
-            console.error('Signup transaction error:', err);
-            res.status(500).json({ 
-                message: "Server error during registration",
-                error: err.message 
+        const existingUsers = await executeQuery(existingUserQuery, existingUserParams);
+        if (existingUsers.length > 0) {
+            return res.status(409).json({ 
+                message: "Username or email already in use" 
             });
         }
+
+        // Generate verification code
+        const verificationCode = generateVerificationCode();
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 15); // Code valid for 15 minutes
+
+        // Store temporary registration details and verification code
+        const tempRegData = {
+            username,
+            email,
+            password,
+            firstname,
+            lastname,
+            age,
+            gender,
+            mobilenumber,
+            verificationCode,
+            codeExpiry
+        };
+        verificationCodes.set(email, tempRegData);
+
+        // Send verification code via email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Your Verification Code',
+            html: `
+                <h1>Email Verification</h1>
+                <p>Your verification code is:</p>
+                <h2>${verificationCode}</h2>
+                <p>This code will expire in 15 minutes.</p>
+                <p>If you did not request this verification, please ignore this email.</p>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ 
+            message: "Verification code sent to your email",
+            email: email
+        });
+
     } catch (err) {
-        console.error('Signup error:', err);
+        console.error('Pre-signup error:', err);
+        res.status(500).json({ 
+            message: "Server error during pre-registration",
+            error: err.message 
+        });
+    }
+});
+
+// Complete Signup with Verification Code
+app.post("/complete-signup", async (req, res) => {
+    try {
+        const { email, verificationCode } = req.body;
+
+        // Retrieve stored registration data
+        const tempRegData = verificationCodes.get(email);
+
+        // Validate verification code
+        if (!tempRegData || 
+            tempRegData.verificationCode !== verificationCode || 
+            new Date() > tempRegData.codeExpiry
+        ) {
+            return res.status(400).json({ 
+                message: "Invalid or expired verification code" 
+            });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(tempRegData.password, salt);
+
+        const DEFAULT_ROLE_ID = 1;
+
+        // Start a transaction to insert user credentials and profile
+        const registrationQuery = `
+            BEGIN TRANSACTION;
+            
+            -- Insert user credentials
+            INSERT INTO user_credentials (username, role_id, password, is_verified)
+            VALUES (@param0, @param1, @param2, @param3);
+            
+            -- Get the new user ID
+            DECLARE @newUserId INT = SCOPE_IDENTITY();
+            
+            -- Insert user profile
+            INSERT INTO user_profiles (
+                user_id, firstname, lastname, age, gender, email, mobile_number
+            ) VALUES (
+                @newUserId, @param4, @param5, @param6, @param7, @param8, @param9
+            );
+            
+            COMMIT TRANSACTION;
+            
+            SELECT @newUserId AS userId;
+        `;
+
+        const registrationParams = [
+            { type: TYPES.NVarChar, value: tempRegData.username },
+            { type: TYPES.Int, value: DEFAULT_ROLE_ID },
+            { type: TYPES.NVarChar, value: hashedPassword },
+            { type: TYPES.Bit, value: 1 }, // Directly verified
+            { type: TYPES.NVarChar, value: tempRegData.firstname },
+            { type: TYPES.NVarChar, value: tempRegData.lastname },
+            { type: TYPES.Int, value: tempRegData.age ? parseInt(tempRegData.age, 10) : null },
+            { type: TYPES.NVarChar, value: tempRegData.gender },
+            { type: TYPES.NVarChar, value: email },
+            { type: TYPES.NVarChar, value: tempRegData.mobilenumber }
+        ];
+
+        const userResult = await executeQuery(registrationQuery, registrationParams);
+        const userId = userResult[0][0].value;
+
+        // Remove verification code from storage
+        verificationCodes.delete(email);
+
+        res.status(201).json({ 
+            message: "Registration completed successfully", 
+            userId 
+        });
+
+    } catch (err) {
+        console.error('Complete signup error:', err);
         res.status(500).json({ 
             message: "Server error during registration",
             error: err.message 
         });
     }
 });
+
+// Resend Verification Code Endpoint
+app.post("/resend-verification-code", async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        // Check if there's an existing pre-registration for this email
+        const tempRegData = verificationCodes.get(email);
+
+        if (!tempRegData) {
+            return res.status(400).json({ 
+                message: "No pending registration found. Please start the signup process again." 
+            });
+        }
+
+        // Generate new verification code
+        const verificationCode = generateVerificationCode();
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 15);
+
+        // Update stored data with new code
+        tempRegData.verificationCode = verificationCode;
+        tempRegData.codeExpiry = codeExpiry;
+        verificationCodes.set(email, tempRegData);
+
+        // Send new verification code via email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Your New Verification Code',
+            html: `
+                <h1>Email Verification</h1>
+                <p>Your new verification code is:</p>
+                <h2>${verificationCode}</h2>
+                <p>This code will expire in 15 minutes.</p>
+                <p>If you did not request this verification, please ignore this email.</p>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.json({ 
+            message: "New verification code sent to your email",
+            email: email 
+        });
+
+    } catch (err) {
+        console.error('Resend verification code error:', err);
+        res.status(500).json({ 
+            message: "Server error", 
+            error: err.message 
+        });
+    }
+});
+
+
+// Signup endpoint old
+// app.post("/signup", async (req, res) => {
+//     try {
+//         const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
+
+//         // Hash password
+//         const salt = await bcrypt.genSalt(10);
+//         const hashedPassword = await bcrypt.hash(password, salt);
+
+//         // Start transaction
+//         const DEFAULT_ROLE_ID = 1;
+
+//         try {
+//             // Insert user credentials
+//             const userInsertQuery = `
+//                 INSERT INTO user_credentials (username, role_id, password)
+//                 VALUES (@param0, @param1, @param2);
+//                 SELECT SCOPE_IDENTITY() AS userId;
+//             `;
+//             const userParams = [
+//                 { type: TYPES.NVarChar, value: username },
+//                 { type: TYPES.Int, value: DEFAULT_ROLE_ID },
+//                 { type: TYPES.NVarChar, value: hashedPassword }
+//             ];
+//             const userResult = await executeQuery(userInsertQuery, userParams);
+//             const userId = userResult[0][0].value;
+
+//             // Insert user profile
+//             const profileInsertQuery = `
+//                 INSERT INTO user_profiles (
+//                     user_id, firstname, lastname, age, gender, email, mobile_number
+//                 ) VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
+//             `;
+//             const profileParams = [
+//                 { type: TYPES.Int, value: userId },
+//                 { type: TYPES.NVarChar, value: firstname },
+//                 { type: TYPES.NVarChar, value: lastname },
+//                 { type: TYPES.Int, value: age ? parseInt(age, 10) : null },
+//                 { type: TYPES.NVarChar, value: gender },
+//                 { type: TYPES.NVarChar, value: email },
+//                 { type: TYPES.NVarChar, value: mobilenumber }
+//             ];
+//             await executeQuery(profileInsertQuery, profileParams);
+
+//             res.status(201).json({ 
+//                 message: "User registered successfully", 
+//                 userId 
+//             });
+
+//         } catch (err) {
+//             console.error('Signup transaction error:', err);
+//             res.status(500).json({ 
+//                 message: "Server error during registration",
+//                 error: err.message 
+//             });
+//         }
+//     } catch (err) {
+//         console.error('Signup error:', err);
+//         res.status(500).json({ 
+//             message: "Server error during registration",
+//             error: err.message 
+//         });
+//     }
+// });
 
 // Login endpoint
 app.post("/login", async (req, res) => {
