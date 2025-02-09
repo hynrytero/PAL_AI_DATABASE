@@ -113,7 +113,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Verification Codes Storage (In a real app, use a distributed cache like Redis)
+// Verification Codes Storage 
 const verificationCodes = new Map();
 
 // Generate a 6-digit verification code
@@ -126,24 +126,16 @@ app.post("/pre-signup", requestLimiter, async (req, res) => {
     try {
         const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
 
-        // Check if username or email already exists in user_credentials
-        const existingUserQuery = `
-            SELECT 1 FROM user_credentials 
-            WHERE username = @param0 OR 
-            EXISTS (
-                SELECT 1 FROM user_profiles 
-                WHERE email = @param1
-            )
+        // Check if email already exists
+        const emailQuery = `
+            SELECT 1 FROM user_profiles 
+            WHERE email = @param0
         `;
-        const existingUserParams = [
-            { type: TYPES.NVarChar, value: username },
-            { type: TYPES.NVarChar, value: email }
-        ];
-
-        const existingUsers = await executeQuery(existingUserQuery, existingUserParams);
-        if (existingUsers.length > 0) {
-            return res.status(409).json({ 
-                message: "Username or email already in use" 
+        const emailParams = [{ type: TYPES.NVarChar, value: email }];
+        const existingEmail = await executeQuery(emailQuery, emailParams);
+        if (existingEmail.length > 0) {
+            return res.status(409).json({
+                message: "Email already in use"
             });
         }
 
@@ -329,72 +321,6 @@ app.post("/resend-verification-code", async (req, res) => {
         });
     }
 });
-
-
-// Signup endpoint old
-// app.post("/signup", async (req, res) => {
-//     try {
-//         const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
-
-//         // Hash password
-//         const salt = await bcrypt.genSalt(10);
-//         const hashedPassword = await bcrypt.hash(password, salt);
-
-//         // Start transaction
-//         const DEFAULT_ROLE_ID = 1;
-
-//         try {
-//             // Insert user credentials
-//             const userInsertQuery = `
-//                 INSERT INTO user_credentials (username, role_id, password)
-//                 VALUES (@param0, @param1, @param2);
-//                 SELECT SCOPE_IDENTITY() AS userId;
-//             `;
-//             const userParams = [
-//                 { type: TYPES.NVarChar, value: username },
-//                 { type: TYPES.Int, value: DEFAULT_ROLE_ID },
-//                 { type: TYPES.NVarChar, value: hashedPassword }
-//             ];
-//             const userResult = await executeQuery(userInsertQuery, userParams);
-//             const userId = userResult[0][0].value;
-
-//             // Insert user profile
-//             const profileInsertQuery = `
-//                 INSERT INTO user_profiles (
-//                     user_id, firstname, lastname, age, gender, email, mobile_number
-//                 ) VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
-//             `;
-//             const profileParams = [
-//                 { type: TYPES.Int, value: userId },
-//                 { type: TYPES.NVarChar, value: firstname },
-//                 { type: TYPES.NVarChar, value: lastname },
-//                 { type: TYPES.Int, value: age ? parseInt(age, 10) : null },
-//                 { type: TYPES.NVarChar, value: gender },
-//                 { type: TYPES.NVarChar, value: email },
-//                 { type: TYPES.NVarChar, value: mobilenumber }
-//             ];
-//             await executeQuery(profileInsertQuery, profileParams);
-
-//             res.status(201).json({ 
-//                 message: "User registered successfully", 
-//                 userId 
-//             });
-
-//         } catch (err) {
-//             console.error('Signup transaction error:', err);
-//             res.status(500).json({ 
-//                 message: "Server error during registration",
-//                 error: err.message 
-//             });
-//         }
-//     } catch (err) {
-//         console.error('Signup error:', err);
-//         res.status(500).json({ 
-//             message: "Server error during registration",
-//             error: err.message 
-//         });
-//     }
-// });
 
 // Login endpoint
 app.post("/login", async (req, res) => {
@@ -632,7 +558,7 @@ app.get('/disease-info/:classNumber', async (req, res) => {
 });
 
 // Home endpoint
-app.get("/", (req, res) => {
+app.get("/", requestLimiter, (req, res) => {
     res.json({
         status: "online",
         message: "Server is running na mga neighbors",
