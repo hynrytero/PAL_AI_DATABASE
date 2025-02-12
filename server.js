@@ -132,9 +132,11 @@ app.get('/api/scan-history/:userId', async (req, res) => {
                 rls.disease_confidence_score,
                 rls.created_at,
                 rld.rice_leaf_disease,
-                rld.description
+                rld.description as disease_description,
+                rpm.description as medicine_description
             FROM rice_leaf_scan rls
             JOIN rice_leaf_disease rld ON rls.rice_leaf_disease_id = rld.rice_leaf_disease_id
+            LEFT JOIN rice_plant_medicine rpm ON rld.medicine_id = rpm.medicine_id
             WHERE rls.user_id = @param0
             ORDER BY rls.created_at DESC
         `;
@@ -145,14 +147,14 @@ app.get('/api/scan-history/:userId', async (req, res) => {
 
         const results = await executeQuery(query, params);
         
-       
         const formattedResults = results.map(row => ({
             id: row[0].value,
             image: row[1].value,
             confidence: Math.round(row[2].value * 100),
             date: row[3].value,
             disease: row[4].value,
-            description: row[5].value || 'No description available' 
+            diseaseDescription: row[5].value || 'No disease description available',
+            medicineDescription: row[6].value || 'No medicine information available'
         }));
 
         res.json(formattedResults);
