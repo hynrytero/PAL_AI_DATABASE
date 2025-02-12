@@ -121,6 +121,47 @@ function generateVerificationCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// get scan history
+app.get('/api/scan-history/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const query = `
+            SELECT 
+                rls.rice_leaf_scan_id,
+                rls.scan_image,
+                rls.disease_confidence_score,
+                rls.created_at,
+                rld.rice_leaf_disease,
+                rld.description
+            FROM rice_leaf_scan rls
+            JOIN rice_leaf_disease rld ON rls.rice_leaf_disease_id = rld.rice_leaf_disease_id
+            WHERE rls.user_id = @param0
+            ORDER BY rls.created_at DESC
+        `;
+
+        const params = [
+            { type: TYPES.Int, value: parseInt(userId) }
+        ];
+
+        const results = await executeQuery(query, params);
+        
+       
+        const formattedResults = results.map(row => ({
+            id: row[0].value,
+            image: row[1].value,
+            confidence: Math.round(row[2].value * 100),
+            date: row[3].value,
+            disease: row[4].value,
+            description: row[5].value || 'No description available' 
+        }));
+
+        res.json(formattedResults);
+    } catch (error) {
+        console.error('Error fetching scan history:', error);
+        res.status(500).json({ error: 'Failed to fetch scan history' });
+    }
+});
+
 // Initial Signup Endpoint (Pre-registration)
 app.post("/pre-signup", requestLimiter, async (req, res) => {
     try {
@@ -573,7 +614,7 @@ async function startServer() {
         await initDatabaseConnection();
 
         // Start express server
-        const PORT = process.env.PORT || 3000;
+        const PORT = process.env.PORT || 5000;
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
