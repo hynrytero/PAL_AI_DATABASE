@@ -9,30 +9,21 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 
-// Initialize Google Cloud Storage
-const storage = new Storage({
-    projectId: process.env.GOOGLE_CLOUD_PROJECT,
-});
-const bucket = storage.bucket(process.env.BUCKET_NAME);
+/*DATABASE*/
+const connectionPool = [];
+const MAX_POOL_SIZE = 10;
 
-// Create Express app
-const app = express();
-app.use(bodyParser.json());
-
-// Database connection setup
-let connection;
-let connector;
-
-async function initDatabaseConnection() {
+// Database Connection
+async function createNewConnection() {
     try {
-        connector = new Connector();
+        const connector = new Connector();
         const clientOpts = await connector.getTediousOptions({
             instanceConnectionName: process.env.DB_SERVER,
             ipType: 'PUBLIC',
         });
 
-        connection = new Connection({
-            server: '0.0.0.0', // Note: this is due to a tedious driver bug
+        const connection = new Connection({
+            server: '0.0.0.0',
             authentication: {
                 type: 'default',
                 options: {
@@ -42,62 +33,124 @@ async function initDatabaseConnection() {
             },
             options: {
                 ...clientOpts,
-                port: 9999, // Note: this is due to a tedious driver bug
+                port: 9999,
                 database: process.env.DB_NAME,
                 trustServerCertificate: true,
-                encrypt: false
+                encrypt: false,
+                connectTimeout: 30000, // 30 seconds timeout
+                requestTimeout: 30000,
+                retry: {
+                    maxRetries: 3,
+                    minTimeout: 300,
+                    maxTimeout: 3000
+                }
             },
         });
 
-        connection.on('connect', (err) => {
-            if (err) {
-                console.error('Database connection failed:', err);
-                return;
-            }
-            console.log('Connected to Cloud SQL database');
+        return new Promise((resolve, reject) => {
+            connection.connect(err => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve(connection);
+            });
         });
-
-        connection.on('error', (err) => {
-            console.error('Database connection error:', err);
-        });
-
-        connection.connect();
     } catch (error) {
-        console.error('Failed to initialize database connection:', error);
+        throw error;
     }
 }
 
-// Utility function to execute SQL queries
-function executeQuery(query, params = []) {
-    return new Promise((resolve, reject) => {
-        const request = new Request(query, (err) => {
-            if (err) {
-                reject(err);
+// Get an available connection from the pool
+async function getConnection() {
+    // Remove closed connections from the pool
+    for (let i = connectionPool.length - 1; i >= 0; i--) {
+        if (connectionPool[i].state.name === 'Final') {
+            connectionPool.splice(i, 1);
+        }
+    }
+
+    // Find an available connection
+    const availableConnection = connectionPool.find(conn => 
+        conn.state.name === 'LoggedIn' && !conn.isExecuting);
+
+    if (availableConnection) {
+        return availableConnection;
+    }
+
+    // Create new connection if pool isn't full
+    if (connectionPool.length < MAX_POOL_SIZE) {
+        const newConnection = await createNewConnection();
+        connectionPool.push(newConnection);
+        return newConnection;
+    }
+
+    // Wait for an available connection
+    return new Promise((resolve) => {
+        const checkInterval = setInterval(async () => {
+            const conn = connectionPool.find(c => 
+                c.state.name === 'LoggedIn' && !c.isExecuting);
+            if (conn) {
+                clearInterval(checkInterval);
+                resolve(conn);
             }
-        });
-
-        // Add input parameters
-        params.forEach((param, index) => {
-            request.addParameter(`param${index}`, param.type, param.value);
-        });
-
-        const results = [];
-        request.on('row', (columns) => {
-            results.push(columns);
-        });
-
-        request.on('requestCompleted', () => {
-            resolve(results);
-        });
-
-        request.on('error', (err) => {
-            reject(err);
-        });
-
-        connection.execSql(request);
+        }, 100);
     });
 }
 
+// Modified executeQuery function
+async function executeQuery(query, params = []) {
+    let connection;
+    try {
+        connection = await getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const request = new Request(query, (err) => {
+                if (err) {
+                    reject(err);
+                }
+            });
+
+            params.forEach((param, index) => {
+                request.addParameter(`param${index}`, param.type, param.value);
+            });
+
+            const results = [];
+            request.on('row', (columns) => {
+                results.push(columns);
+            });
+
+            request.on('requestCompleted', () => {
+                resolve(results);
+            });
+
+            request.on('error', (err) => {
+                reject(err);
+            });
+
+            connection.execSql(request);
+        });
+    } catch (error) {
+        // If connection error occurs, try to create a new connection
+        if (connection && connection.state.name === 'Final') {
+            const index = connectionPool.indexOf(connection);
+            if (index > -1) {
+                connectionPool.splice(index, 1);
+            }
+        }
+        throw error;
+    }
+}
+
+
+
+// Initialize Google Cloud Storage
+const storage = new Storage({
+    projectId: process.env.GOOGLE_CLOUD_PROJECT,
+});
+const bucket = storage.bucket(process.env.BUCKET_NAME);
+
+// Rate Limiter
 const requestLimiter = rateLimit({ // try to apply this middleware
     windowMs: 10 * 60 * 1000, 
     max: 30,
@@ -120,6 +173,12 @@ const verificationCodes = new Map();
 function generateVerificationCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
+
+
+// Create Express app
+const app = express();
+app.use(bodyParser.json());
+
 
 // get scan history
 app.get('/api/scan-history/:userId', async (req, res) => {
@@ -612,9 +671,6 @@ app.get("/", requestLimiter, (req, res) => {
 // Start server
 async function startServer() {
     try {
-        // Initialize database connection
-        await initDatabaseConnection();
-
         // Start express server
         const PORT = process.env.PORT || 5000;
         app.listen(PORT, () => {
@@ -629,15 +685,15 @@ async function startServer() {
 // Shutdown handler
 process.on('SIGINT', async () => {
     try {
-        if (connection) {
-            connection.close();
+        // Close all connections in the pool
+        for (const connection of connectionPool) {
+            if (connection && connection.state.name !== 'Final') {
+                connection.close();
+            }
         }
-        if (connector) {
-            connector.close();
-        }
-        console.log('Database connection closed');
+        console.log('All database connections closed');
     } catch (err) {
-        console.error('Error closing database connection:', err);
+        console.error('Error closing database connections:', err);
     }
     process.exit();
 });
