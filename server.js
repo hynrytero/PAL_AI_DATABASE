@@ -494,10 +494,10 @@ app.post("/forgot-password", requestLimiter, async (req, res) => {
 
 app.post("/verify-otp", async (req, res) => {
     try {
-        const { email, verificationCode } = req.body;
+        const { email, otp } = req.body;
 
         // Validate input
-        if (!email || !verificationCode) {
+        if (!email || !otp) {
             return res.status(400).json({
                 message: "Email and OTP are required"
             });
@@ -512,7 +512,7 @@ app.post("/verify-otp", async (req, res) => {
         }
 
         // Validate OTP and expiry
-        if (resetData.resetCode !== verificationCode) {
+        if (resetData.resetCode !== otp) {
             return res.status(400).json({
                 message: "Invalid OTP"
             });
