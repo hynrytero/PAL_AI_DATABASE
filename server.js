@@ -601,7 +601,7 @@ app.post("/resend-password-otp", requestLimiter, async (req, res) => {
 });
 
 // Change Password
-app.post('/reset-password', async (req, res) => {
+app.post("/reset-password", async (req, res) => {
     const { email, newPassword } = req.body;
 
     if (!email || !newPassword) {
