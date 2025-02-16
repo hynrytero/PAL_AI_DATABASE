@@ -168,6 +168,7 @@ const transporter = nodemailer.createTransport({
 
 // Verification Codes Storage 
 const verificationCodes = new Map();
+const passwordResetCodes = new Map();
 
 // Generate a 6-digit verification code
 function generateVerificationCode() {
@@ -179,6 +180,8 @@ function generateVerificationCode() {
 const app = express();
 app.use(bodyParser.json());
 
+
+/*ENDPOINTS*/
 
 // get scan history
 app.get('/api/scan-history/:userId', async (req, res) => {
@@ -419,6 +422,67 @@ app.post("/resend-verification-code", async (req, res) => {
         console.error('Resend verification code error:', err);
         res.status(500).json({ 
             message: "Server error", 
+            error: err.message 
+        });
+    }
+});
+
+app.post("/forgot-password", requestLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        // Check if email exists in database
+        const emailQuery = `
+            SELECT user_id 
+            FROM user_profiles 
+            WHERE email = @param0
+        `;
+        const emailParams = [{ type: TYPES.NVarChar, value: email }];
+        const existingUser = await executeQuery(emailQuery, emailParams);
+
+        if (existingUser.length === 0) {
+            return res.status(404).json({
+                message: "No account found with this email address"
+            });
+        }
+
+        // Generate OTP
+        const resetCode = generateVerificationCode(); 
+        const codeExpiry = new Date();
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 15); 
+
+        // Store password reset details
+        passwordResetCodes.set(email, {
+            resetCode,
+            codeExpiry,
+            userId: existingUser[0][0].value 
+        });
+
+        // Send reset code via email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Password Reset Code',
+            html: `
+                <h1>Password Reset Request</h1>
+                <p>Your password reset code is:</p>
+                <h2>${resetCode}</h2>
+                <p>This code will expire in 15 minutes.</p>
+                <p>If you did not request this password reset, please ignore this email and ensure your account is secure.</p>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ 
+            message: "Password reset code sent to your email",
+            email: email
+        });
+
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ 
+            message: "Server error during password reset request",
             error: err.message 
         });
     }
@@ -667,6 +731,9 @@ app.get("/", requestLimiter, (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+
+
+/*SERVER CONFIG*/
 
 // Start server
 async function startServer() {
