@@ -609,7 +609,6 @@ app.post("/reset-password", async (req, res) => {
     }
 
     try {
-        // First get the user_id from user_profiles
         const getUserQuery = `
             SELECT user_id 
             FROM user_profiles 
@@ -622,14 +621,12 @@ app.post("/reset-password", async (req, res) => {
         if (!userResults || userResults.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
+        
+        const userId = userResults[0][0].value;
 
-        const userId = userResults[0].user_id.value;
-
-        // Hash the new password
         const saltRounds = 12;
         const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
-        // Update the password in user_credentials
         const updatePasswordQuery = `
             UPDATE user_credentials 
             SET password = @param0,
@@ -645,7 +642,16 @@ app.post("/reset-password", async (req, res) => {
 
     } catch (error) {
         console.error('Password reset error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        // Add more detailed error logging
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            query: error.query
+        });
+        res.status(500).json({ 
+            error: 'Internal server error',
+            details: error.message // Add error details for debugging
+        });
     }
 });
 
