@@ -429,7 +429,6 @@ app.post("/resend-verification-code", async (req, res) => {
 });
 
 
-
 /*FORGOT PASSWORD PROCESS*/
 app.post("/forgot-password", requestLimiter, async (req, res) => {
     try {
@@ -601,7 +600,54 @@ app.post("/resend-password-otp", requestLimiter, async (req, res) => {
     }
 });
 
+// Change Password
+app.post('/reset-password', async (req, res) => {
+    const { email, newPassword } = req.body;
 
+    if (!email || !newPassword) {
+        return res.status(400).json({ error: 'Email and new password are required' });
+    }
+
+    try {
+        // First get the user_id from user_profiles
+        const getUserQuery = `
+            SELECT user_id 
+            FROM user_profiles 
+            WHERE email = @param0`;
+
+        const userResults = await executeQuery(getUserQuery, [
+            { type: TYPES.VarChar, value: email }
+        ]);
+
+        if (!userResults || userResults.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userId = userResults[0].user_id.value;
+
+        // Hash the new password
+        const saltRounds = 12;
+        const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+        // Update the password in user_credentials
+        const updatePasswordQuery = `
+            UPDATE user_credentials 
+            SET password = @param0,
+                updated_at = GETDATE()
+            WHERE user_id = @param1`;
+
+        await executeQuery(updatePasswordQuery, [
+            { type: TYPES.VarChar, value: hashedPassword },
+            { type: TYPES.Int, value: userId }
+        ]);
+
+        res.json({ message: 'Password updated successfully' });
+
+    } catch (error) {
+        console.error('Password reset error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 
 // Login endpoint
