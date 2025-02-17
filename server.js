@@ -700,7 +700,8 @@ app.get('/api/profile/:userId', async (req, res) => {
             res.json({
                 success: true,
                 data: {
-                    fullName: `${userProfile.firstname} ${userProfile.lastname}`,
+                    firstname: userProfile.firstname,
+                    lastname: userProfile.lastname,
                     email: userProfile.email,
                     contactNumber: userProfile.mobile_number,
                     age: userProfile.age,
