@@ -687,16 +687,16 @@ app.post("/login", async (req, res) => {
 
         if (result.length === 0) {
             return res.status(400).json({ 
-                message: "Invalid Credentials" 
+                message: "Invalid Username or Email" 
             });
         }
 
         const user = {
-            id: result[0][0].value,
-            username: result[0][1].value,
-            password: result[0][2].value,
-            roleId: result[0][3].value,
-            email: result[0][4].value
+            id: result[0].user_id,
+            username: result[0].username,
+            password: result[0].password,
+            roleId: result[0].role_id,
+            email: result[0].email
         };
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -706,6 +706,17 @@ app.post("/login", async (req, res) => {
                 message: "Invalid credentials" 
             });
         }
+
+        // Add success response
+        return res.status(200).json({
+            message: "Login successful",
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                roleId: user.roleId
+            }
+        });
 
     } catch (err) {
         console.error('Login error:', err);
