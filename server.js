@@ -142,6 +142,8 @@ async function executeQuery(query, params = []) {
     }
 }
 
+
+
 // Initialize Google Cloud Storage
 const storage = new Storage({
     projectId: process.env.GOOGLE_CLOUD_PROJECT,
@@ -652,9 +654,8 @@ app.post("/reset-password", async (req, res) => {
         });
     }
 });
- 
 
-// testing
+
 app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
 
