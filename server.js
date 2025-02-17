@@ -142,6 +142,60 @@ async function executeQuery(query, params = []) {
     }
 }
 
+// testing
+app.get('/api/profile/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        const query = `
+            SELECT 
+                user_profiles_id, 
+                user_id, 
+                firstname, 
+                lastname, 
+                age, 
+                gender, 
+                mobile_number, 
+                address_id, 
+                email, 
+                profile_image,
+                created_at, 
+                updated_at 
+            FROM user_profiles 
+            WHERE user_id = @userId
+        `;
+
+        const params = [
+            { name: 'userId', type: TYPES.Int, value: parseInt(userId, 10) }
+        ];
+
+        console.log("Executing Query:", query);
+        console.log("Parameters:", params);
+
+        const results = await executeQuery(query, params);
+
+        if (results.length > 0) {
+            const userProfile = results[0];
+            res.json({
+                success: true,
+                data: {
+                    fullName: `${userProfile.firstname} ${userProfile.lastname}`,
+                    email: userProfile.email,
+                    contactNumber: userProfile.mobile_number,
+                    age: userProfile.age,
+                    gender: userProfile.gender,
+                    image: userProfile.profile_image
+                }
+            });
+        } else {
+            res.status(404).json({ success: false, message: 'User profile not found' });
+        }
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch user profile' });
+    }
+});
+
 
 
 // Initialize Google Cloud Storage
@@ -654,55 +708,9 @@ app.post("/reset-password", async (req, res) => {
         });
     }
 });
+ 
 
 
-app.get('/api/profile/:userId', async (req, res) => {
-    const { userId } = req.params;
-
-    try {
-        const query = `
-            SELECT 
-                user_profiles_id, 
-                user_id, 
-                firstname, 
-                lastname, 
-                age, 
-                gender, 
-                mobile_number, 
-                address_id, 
-                email, 
-                created_at, 
-                updated_at 
-            FROM user_profiles 
-            WHERE user_id = @userId
-        `;
-
-        const params = [
-            { name: 'userId', type: TYPES.Int, value: userId }
-        ];
-
-        const results = await executeQuery(query, params);
-
-        if (results.length > 0) {
-            const userProfile = results[0];
-            res.json({
-                success: true,
-                data: {
-                    fullName: `${userProfile.firstname} ${userProfile.lastname}`,
-                    email: userProfile.email,
-                    contactNumber: userProfile.mobile_number,
-                    age: userProfile.age,
-                    gender: userProfile.gender
-                }
-            });
-        } else {
-            res.status(404).json({ success: false, message: 'User profile not found' });
-        }
-    } catch (error) {
-        console.error('Error fetching user profile:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch user profile' });
-    }
-});
 
 
 // Login endpoint
