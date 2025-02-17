@@ -675,11 +675,14 @@ app.get('/api/profile/:userId', async (req, res) => {
                 created_at, 
                 updated_at 
             FROM user_profiles 
-            WHERE user_id = @userId
+            WHERE user_id = @param0
         `;
 
         const params = [
-            { name: 'userId', type: TYPES.Int, value: parseInt(userId, 10) }
+            { 
+                type: TYPES.Int, 
+                value: parseInt(userId, 10) 
+            }
         ];
 
         console.log("Executing Query:", query);
@@ -688,7 +691,12 @@ app.get('/api/profile/:userId', async (req, res) => {
         const results = await executeQuery(query, params);
 
         if (results.length > 0) {
-            const userProfile = results[0];
+            // Transform the results from tedious format to object
+            const userProfile = {};
+            results[0].forEach(column => {
+                userProfile[column.metadata.colName] = column.value;
+            });
+
             res.json({
                 success: true,
                 data: {
