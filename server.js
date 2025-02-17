@@ -659,45 +659,60 @@ app.post("/reset-password", async (req, res) => {
 // Login endpoint
 app.post("/login", async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { identifier, password } = req.body;
+
+        if (!identifier || !password) {
+            return res.status(400).json({ 
+                message: "Please provide username/email and password" 
+            });
+        }
 
         const query = `
-            SELECT user_id, username, password 
-            FROM user_credentials 
-            WHERE username = @param0
+            SELECT 
+                uc.user_id, 
+                uc.username, 
+                uc.password,
+                uc.role_id,
+                up.email
+            FROM user_credentials uc
+            JOIN user_profiles up ON uc.user_id = up.user_id
+            WHERE uc.username = @param0 OR up.email = @param0
         `;
+        
         const params = [
-            { type: TYPES.NVarChar, value: username }
+            { type: TYPES.NVarChar, value: identifier }
         ];
 
         const result = await executeQuery(query, params);
 
         if (result.length === 0) {
-            return res.status(400).json({ message: "User not found" });
+            return res.status(400).json({ 
+                message: "Invalid Credentials" 
+            });
         }
 
         const user = {
             id: result[0][0].value,
             username: result[0][1].value,
-            password: result[0][2].value
+            password: result[0][2].value,
+            roleId: result[0][3].value,
+            email: result[0][4].value
         };
 
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
-            return res.status(400).json({ message: "Invalid credentials" });
+            return res.status(400).json({ 
+                message: "Invalid credentials" 
+            });
         }
 
-        res.json({
-            message: "Login successful",
-            user: {
-                id: user.id,
-                username: user.username
-            }
-        });
     } catch (err) {
         console.error('Login error:', err);
-        res.status(500).json({ message: "Server error" });
+        res.status(500).json({ 
+            message: "Server error during login",
+            error: err.message 
+        });
     }
 });
 
