@@ -660,73 +660,45 @@ app.post("/reset-password", async (req, res) => {
 app.post("/login", async (req, res) => {
     try {
         const { identifier, password } = req.body;
-        console.log('Received login attempt:', { identifier });  // Don't log password
 
-        if (!identifier || !password) {
-            return res.status(400).json({ 
-                message: "Please provide username/email and password" 
-            });
-        }
-
+        // Query that joins user_credentials and user_profiles
         const query = `
             SELECT 
-                uc.user_id, 
-                uc.username, 
+                uc.user_id,
+                uc.username,
                 uc.password,
                 uc.role_id,
                 up.email
             FROM user_credentials uc
-            JOIN user_profiles up ON uc.user_id = up.user_id
+            LEFT JOIN user_profiles up ON uc.user_id = up.user_id
             WHERE uc.username = @param0 OR up.email = @param0
         `;
-        
         const params = [
             { type: TYPES.NVarChar, value: identifier }
         ];
 
-        console.log('Executing query:', query);
-        console.log('With params:', params);
-        
         const result = await executeQuery(query, params);
-        console.log('Query result:', result);  // Let's see what the result looks like
 
         if (result.length === 0) {
-            return res.status(400).json({ 
-                message: "Invalid Username or Email" 
-            });
+            return res.status(400).json({ message: "User not found" });
         }
-
-        console.log('Raw result[0]:', result[0]);  // See the structure of first row
-
-        // Try logging the actual values before structuring them
-        console.log('Attempting to access:', {
-            user_id: result[0].user_id,
-            username: result[0].username,
-            password: 'hidden',
-            role_id: result[0].role_id,
-            email: result[0].email
-        });
 
         const user = {
-            id: result[0].user_id,
-            username: result[0].username,
-            password: result[0].password,
-            roleId: result[0].role_id,
-            email: result[0].email
+            id: result[0][0].value,
+            username: result[0][1].value,
+            password: result[0][2].value,
+            roleId: result[0][3].value,
+            email: result[0][4].value
         };
 
-        console.log('User object created:', { ...user, password: '[hidden]' });
-
         const isMatch = await bcrypt.compare(password, user.password);
-        console.log('Password comparison result:', isMatch);
 
         if (!isMatch) {
-            return res.status(400).json({ 
-                message: "Invalid credentials" 
-            });
+            return res.status(400).json({ message: "Invalid credentials" });
         }
 
-        return res.status(200).json({
+        // Return user data without password
+        res.json({
             message: "Login successful",
             user: {
                 id: user.id,
@@ -735,17 +707,9 @@ app.post("/login", async (req, res) => {
                 roleId: user.roleId
             }
         });
-
     } catch (err) {
-        console.error('Login error details:', {
-            message: err.message,
-            stack: err.stack,
-            name: err.name
-        });
-        res.status(500).json({ 
-            message: "Server error during login",
-            error: err.message 
-        });
+        console.error('Login error:', err);
+        res.status(500).json({ message: "Server error" });
     }
 });
 
