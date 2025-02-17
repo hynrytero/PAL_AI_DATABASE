@@ -656,7 +656,7 @@ app.post("/reset-password", async (req, res) => {
 });
 
 
-router.get('/api/profile/:userId', async (req, res) => {
+app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
 
     try {
