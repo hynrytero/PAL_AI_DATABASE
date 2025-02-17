@@ -660,6 +660,7 @@ app.post("/reset-password", async (req, res) => {
 app.post("/login", async (req, res) => {
     try {
         const { identifier, password } = req.body;
+        console.log('Received login attempt:', { identifier });  // Don't log password
 
         if (!identifier || !password) {
             return res.status(400).json({ 
@@ -683,13 +684,28 @@ app.post("/login", async (req, res) => {
             { type: TYPES.NVarChar, value: identifier }
         ];
 
+        console.log('Executing query:', query);
+        console.log('With params:', params);
+        
         const result = await executeQuery(query, params);
+        console.log('Query result:', result);  // Let's see what the result looks like
 
         if (result.length === 0) {
             return res.status(400).json({ 
                 message: "Invalid Username or Email" 
             });
         }
+
+        console.log('Raw result[0]:', result[0]);  // See the structure of first row
+
+        // Try logging the actual values before structuring them
+        console.log('Attempting to access:', {
+            user_id: result[0].user_id,
+            username: result[0].username,
+            password: 'hidden',
+            role_id: result[0].role_id,
+            email: result[0].email
+        });
 
         const user = {
             id: result[0].user_id,
@@ -699,7 +715,10 @@ app.post("/login", async (req, res) => {
             email: result[0].email
         };
 
+        console.log('User object created:', { ...user, password: '[hidden]' });
+
         const isMatch = await bcrypt.compare(password, user.password);
+        console.log('Password comparison result:', isMatch);
 
         if (!isMatch) {
             return res.status(400).json({ 
@@ -707,7 +726,6 @@ app.post("/login", async (req, res) => {
             });
         }
 
-        // Add success response
         return res.status(200).json({
             message: "Login successful",
             user: {
@@ -719,7 +737,11 @@ app.post("/login", async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Login error:', err);
+        console.error('Login error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name
+        });
         res.status(500).json({ 
             message: "Server error during login",
             error: err.message 
