@@ -187,6 +187,7 @@ app.use(bodyParser.json());
 app.get('/api/scan-history/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
+        console.log('Fetching scans for userId:', userId);
         const query = `
             SELECT 
                 rls.rice_leaf_scan_id,
@@ -655,7 +656,7 @@ app.post("/reset-password", async (req, res) => {
     }
 });
 
-
+// profile
 app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
 
