@@ -318,14 +318,6 @@ app.post('/verify-email-change', async (req, res) => {
             });
         }
 
-        const storedHash = results[0].password?.trim() || '';
-        if (!storedHash) {
-            return res.status(500).json({
-                success: false,
-                message: 'Invalid password data'
-            });
-        }
-
         const isPasswordValid = await bcrypt.compare(password.trim(), storedHash);
 
         if (!isPasswordValid) {
