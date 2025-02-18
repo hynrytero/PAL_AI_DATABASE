@@ -215,8 +215,7 @@ app.post('/change-password', async (req, res) => {
             });
         }
 
-        // Verify current password
-        const storedHash = results[0].password.value;
+        const storedHash = results[0].password;
         const isCurrentPasswordValid = await bcrypt.compare(currentPassword, storedHash);
 
         if (!isCurrentPasswordValid) {
@@ -304,8 +303,8 @@ app.post('/verify-email-change', async (req, res) => {
                 message: 'User not found'
             });
         }
-
-        const storedHash = results[0].password.value;
+        
+        const storedHash = results[0].password;
         const isPasswordValid = await bcrypt.compare(password, storedHash);
 
         if (!isPasswordValid) {
