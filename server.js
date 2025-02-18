@@ -213,11 +213,27 @@ app.post('/change-password', async (req, res) => {
             });
         }
 
-        const storedHash = results[0].password?.trim() || '';
-        if (!storedHash) {
-            return res.status(500).json({
+        // Add debugging logs
+        console.log('Raw password value:', results[0].password);
+        console.log('Password type:', typeof results[0].password);
+        console.log('Password length:', results[0].password ? results[0].password.length : 'N/A');
+
+        // Handle different types of empty values
+        if (results[0].password === null || 
+            results[0].password === undefined || 
+            results[0].password === '') {
+            return res.status(400).json({
                 success: false,
-                message: 'Invalid password data'
+                message: 'Password not set for this user'
+            });
+        }
+
+        const storedHash = results[0].password.toString().trim();
+        
+        if (!storedHash) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password appears to be empty'
             });
         }
 
