@@ -318,6 +318,14 @@ app.post('/verify-email-change', async (req, res) => {
             });
         }
 
+        const storedHash = results[0][0].value;
+        if (!storedHash) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password not set for this user'
+            });
+        }
+
         const isPasswordValid = await bcrypt.compare(password.trim(), storedHash);
 
         if (!isPasswordValid) {
