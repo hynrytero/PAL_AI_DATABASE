@@ -201,7 +201,7 @@ app.post('/change-password', async (req, res) => {
         `;
 
         const verifyParams = [
-            { type: TYPES.Int, value: parseInt(user_id, 10) }  // Ensure user_id is an integer
+            { type: TYPES.Int, value: parseInt(user_id, 10) }  
         ];
 
         const results = await executeQuery(verifyQuery, verifyParams);
