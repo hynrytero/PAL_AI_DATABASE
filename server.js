@@ -369,9 +369,25 @@ app.post('/confirm-email-change', async (req, res) => {
     const { user_id, otp } = req.body;
 
     try {
+        console.log('Received confirmation request:', {
+            user_id,
+            otp,
+            timestamp: new Date().toISOString()
+        });
+
         const storedData = otpStorage.get(user_id.toString());
+        console.log('Retrieved stored data:', {
+            exists: !!storedData,
+            storedData: storedData ? {
+                timestamp: new Date(storedData.timestamp).toISOString(),
+                newEmail: storedData.newEmail,
+                otpLength: storedData.otp?.length,
+                timeSinceCreation: Date.now() - storedData.timestamp + 'ms'
+            } : null
+        });
 
         if (!storedData) {
+            console.log('No OTP data found for user_id:', user_id);
             return res.status(400).json({
                 success: false,
                 message: 'No OTP request found'
@@ -379,7 +395,17 @@ app.post('/confirm-email-change', async (req, res) => {
         }
 
         // Check if OTP is expired (10 minutes)
-        if (Date.now() - storedData.timestamp > 10 * 60 * 1000) {
+        const timeElapsed = Date.now() - storedData.timestamp;
+        const isExpired = timeElapsed > 10 * 60 * 1000;
+        
+        console.log('OTP expiration check:', {
+            timeElapsed: timeElapsed + 'ms',
+            expirationLimit: '600000ms',
+            isExpired
+        });
+
+        if (isExpired) {
+            console.log('OTP expired for user_id:', user_id);
             otpStorage.delete(user_id.toString());
             return res.status(400).json({
                 success: false,
@@ -387,7 +413,15 @@ app.post('/confirm-email-change', async (req, res) => {
             });
         }
 
-        if (storedData.otp !== otp) {
+        const otpMatches = storedData.otp === otp;
+        console.log('OTP validation:', {
+            matches: otpMatches,
+            providedLength: otp?.length,
+            storedLength: storedData.otp?.length
+        });
+
+        if (!otpMatches) {
+            console.log('Invalid OTP provided for user_id:', user_id);
             return res.status(400).json({
                 success: false,
                 message: 'Invalid OTP'
@@ -408,6 +442,7 @@ app.post('/confirm-email-change', async (req, res) => {
         ];
 
         await executeQuery(updateQuery, updateParams);
+        console.log('Email updated successfully for user_id:', user_id);
 
         // Clear OTP data
         otpStorage.delete(user_id.toString());
@@ -418,7 +453,11 @@ app.post('/confirm-email-change', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Email change error:', error);
+        console.error('Email change error:', {
+            user_id,
+            error: error.message,
+            stack: error.stack
+        });
         return res.status(500).json({
             success: false,
             message: 'Internal server error during email change'
