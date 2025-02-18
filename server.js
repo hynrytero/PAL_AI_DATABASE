@@ -215,7 +215,33 @@ app.post('/change-password', async (req, res) => {
             });
         }
 
-        const storedHash = results[0].password;
+        // Debug logging (remove in production)
+        console.log('Query results:', {
+            hasResults: !!results,
+            resultLength: results.length,
+            firstResult: results[0],
+            passwordField: results[0]?.password,
+            passwordType: typeof results[0]?.password
+        });
+
+        // Get stored hash and verify it exists
+        const storedHash = results[0]?.password;
+        if (!storedHash) {
+            console.error('Stored hash is undefined or null');
+            return res.status(500).json({
+                success: false,
+                message: 'Error retrieving password data'
+            });
+        }
+
+        // Debug logging for comparison values (remove in production)
+        console.log('Comparison values:', {
+            hasStoredHash: !!storedHash,
+            hasCurrentPassword: !!currentPassword,
+            storedHashType: typeof storedHash,
+            currentPasswordType: typeof currentPassword
+        });
+
         const isCurrentPasswordValid = await bcrypt.compare(currentPassword, storedHash);
 
         if (!isCurrentPasswordValid) {
@@ -303,8 +329,34 @@ app.post('/verify-email-change', async (req, res) => {
                 message: 'User not found'
             });
         }
-        
-        const storedHash = results[0].password;
+
+        // Debug logging (remove in production)
+        console.log('Email verification query results:', {
+            hasResults: !!results,
+            resultLength: results.length,
+            firstResult: results[0],
+            passwordField: results[0]?.password,
+            passwordType: typeof results[0]?.password
+        });
+
+        // Get stored hash and verify it exists
+        const storedHash = results[0]?.password;
+        if (!storedHash) {
+            console.error('Stored hash is undefined or null in email verification');
+            return res.status(500).json({
+                success: false,
+                message: 'Error retrieving password data'
+            });
+        }
+
+        // Debug logging for comparison values (remove in production)
+        console.log('Email verification comparison values:', {
+            hasStoredHash: !!storedHash,
+            hasPassword: !!password,
+            storedHashType: typeof storedHash,
+            passwordType: typeof password
+        });
+
         const isPasswordValid = await bcrypt.compare(password, storedHash);
 
         if (!isPasswordValid) {
