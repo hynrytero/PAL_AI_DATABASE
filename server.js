@@ -336,7 +336,7 @@ app.post('/verify-email-change', async (req, res) => {
         }
 
         // Generate and store OTP
-        const otp = generateOTP();
+        const otp = generateVerificationCode();
         otpStorage.set(user_id.toString(), {
             otp,
             newEmail: newEmail.trim(),
