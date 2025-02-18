@@ -280,12 +280,11 @@ app.post('/verify-email-change', async (req, res) => {
         const emailCheckQuery = `
             SELECT email 
             FROM user_profiles 
-            WHERE email = @param0 AND user_id != @param1
+            WHERE email = @param0 
         `;
         
         const emailCheckParams = [
-            { type: TYPES.VarChar, value: newEmail.trim() },
-            { type: TYPES.Int, value: parseInt(user_id, 10) }
+            { type: TYPES.VarChar, value: newEmail.trim() }
         ];
 
         const emailResults = await executeQuery(emailCheckQuery, emailCheckParams);
