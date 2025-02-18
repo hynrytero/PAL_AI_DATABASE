@@ -215,17 +215,8 @@ app.post('/change-password', async (req, res) => {
             });
         }
 
-        // Debug logging (remove in production)
-        console.log('Query results:', {
-            hasResults: !!results,
-            resultLength: results.length,
-            firstResult: results[0],
-            passwordField: results[0]?.password,
-            passwordType: typeof results[0]?.password
-        });
-
-        // Get stored hash and verify it exists
-        const storedHash = results[0]?.password;
+        // Extract password from the value property
+        const storedHash = results[0]?.password?.value;
         if (!storedHash) {
             console.error('Stored hash is undefined or null');
             return res.status(500).json({
@@ -233,14 +224,6 @@ app.post('/change-password', async (req, res) => {
                 message: 'Error retrieving password data'
             });
         }
-
-        // Debug logging for comparison values (remove in production)
-        console.log('Comparison values:', {
-            hasStoredHash: !!storedHash,
-            hasCurrentPassword: !!currentPassword,
-            storedHashType: typeof storedHash,
-            currentPasswordType: typeof currentPassword
-        });
 
         const isCurrentPasswordValid = await bcrypt.compare(currentPassword, storedHash);
 
@@ -330,17 +313,8 @@ app.post('/verify-email-change', async (req, res) => {
             });
         }
 
-        // Debug logging (remove in production)
-        console.log('Email verification query results:', {
-            hasResults: !!results,
-            resultLength: results.length,
-            firstResult: results[0],
-            passwordField: results[0]?.password,
-            passwordType: typeof results[0]?.password
-        });
-
-        // Get stored hash and verify it exists
-        const storedHash = results[0]?.password;
+        // Extract password from the value property
+        const storedHash = results[0]?.password?.value;
         if (!storedHash) {
             console.error('Stored hash is undefined or null in email verification');
             return res.status(500).json({
@@ -348,14 +322,6 @@ app.post('/verify-email-change', async (req, res) => {
                 message: 'Error retrieving password data'
             });
         }
-
-        // Debug logging for comparison values (remove in production)
-        console.log('Email verification comparison values:', {
-            hasStoredHash: !!storedHash,
-            hasPassword: !!password,
-            storedHashType: typeof storedHash,
-            passwordType: typeof password
-        });
 
         const isPasswordValid = await bcrypt.compare(password, storedHash);
 
