@@ -169,6 +169,7 @@ const transporter = nodemailer.createTransport({
 // Verification Codes Storage 
 const verificationCodes = new Map();
 const passwordResetCodes = new Map();
+const otpStorage = new Map();
 
 // Generate a 6-digit verification code
 function generateVerificationCode() {
@@ -179,6 +180,231 @@ function generateVerificationCode() {
 // Create Express app
 const app = express();
 app.use(bodyParser.json());
+
+
+// change password & email
+app.post('/change-password', async (req, res) => {
+    const { user_id, currentPassword, newPassword } = req.body;
+
+    // Input validation
+    if (!user_id || !currentPassword || !newPassword) {
+        return res.status(400).json({
+            success: false,
+            message: 'All fields are required'
+        });
+    }
+
+    try {
+        // First verify current password
+        const verifyQuery = `
+            SELECT password 
+            FROM user_credentials 
+            WHERE user_id = @param0
+        `;
+
+        const verifyParams = [
+            { type: TYPES.Int, value: user_id }
+        ];
+
+        const results = await executeQuery(verifyQuery, verifyParams);
+
+        if (!results || results.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Verify current password
+        const storedHash = results[0].password.value;
+        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, storedHash);
+
+        if (!isCurrentPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Current password is incorrect'
+            });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const newPasswordHash = await bcrypt.hash(newPassword, salt);
+
+        // Update password
+        const updateQuery = `
+            UPDATE user_credentials 
+            SET password = @param1, 
+                updated_at = GETDATE()
+            WHERE user_id = @param0
+        `;
+
+        const updateParams = [
+            { type: TYPES.Int, value: user_id },
+            { type: TYPES.VarChar, value: newPasswordHash }
+        ];
+
+        await executeQuery(updateQuery, updateParams);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Password successfully updated'
+        });
+
+    } catch (error) {
+        console.error('Password change error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error during password change'
+        });
+    }
+});
+
+app.post('/verify-email-change', async (req, res) => {
+    const { user_id, password, newEmail } = req.body;
+
+    try {
+        // Verify if email already exists
+        const emailCheckQuery = `
+            SELECT email 
+            FROM user_profiles 
+            WHERE email = @param0 AND user_id != @param1
+        `;
+        
+        const emailCheckParams = [
+            { type: TYPES.VarChar, value: newEmail },
+            { type: TYPES.Int, value: user_id }
+        ];
+
+        const emailResults = await executeQuery(emailCheckQuery, emailCheckParams);
+        
+        if (emailResults && emailResults.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email already in use'
+            });
+        }
+
+        // Verify current password
+        const verifyQuery = `
+            SELECT uc.password, up.email
+            FROM user_credentials uc
+            JOIN user_profiles up ON uc.user_id = up.user_id
+            WHERE uc.user_id = @param0
+        `;
+
+        const verifyParams = [
+            { type: TYPES.Int, value: user_id }
+        ];
+
+        const results = await executeQuery(verifyQuery, verifyParams);
+
+        if (!results || results.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const storedHash = results[0].password.value;
+        const isPasswordValid = await bcrypt.compare(password, storedHash);
+
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Current password is incorrect'
+            });
+        }
+
+        // Generate and store OTP
+        const otp = generateOTP();
+        otpStorage.set(user_id.toString(), {
+            otp,
+            newEmail,
+            timestamp: Date.now()
+        });
+
+        // Send OTP email
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: newEmail,
+            subject: 'Email Change Verification',
+            text: `Your OTP for email change is: ${otp}. This code will expire in 10 minutes.`
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent successfully'
+        });
+
+    } catch (error) {
+        console.error('Email change verification error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error during verification'
+        });
+    }
+});
+
+app.post('/confirm-email-change', async (req, res) => {
+    const { user_id, otp } = req.body;
+
+    try {
+        const storedData = otpStorage.get(user_id.toString());
+
+        if (!storedData) {
+            return res.status(400).json({
+                success: false,
+                message: 'No OTP request found'
+            });
+        }
+
+        // Check if OTP is expired (10 minutes)
+        if (Date.now() - storedData.timestamp > 10 * 60 * 1000) {
+            otpStorage.delete(user_id.toString());
+            return res.status(400).json({
+                success: false,
+                message: 'OTP has expired'
+            });
+        }
+
+        if (storedData.otp !== otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid OTP'
+            });
+        }
+
+        // Update email
+        const updateQuery = `
+            UPDATE user_profiles 
+            SET email = @param1,
+                updated_at = GETDATE()
+            WHERE user_id = @param0
+        `;
+
+        const updateParams = [
+            { type: TYPES.Int, value: user_id },
+            { type: TYPES.VarChar, value: storedData.newEmail }
+        ];
+
+        await executeQuery(updateQuery, updateParams);
+
+        // Clear OTP data
+        otpStorage.delete(user_id.toString());
+
+        return res.status(200).json({
+            success: true,
+            message: 'Email updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Email change error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error during email change'
+        });
+    }
+});
 
 
 /*ENDPOINTS*/
@@ -643,7 +869,6 @@ app.post("/reset-password", async (req, res) => {
 
     } catch (error) {
         console.error('Password reset error:', error);
-        // Add more detailed error logging
         console.error('Error details:', {
             message: error.message,
             stack: error.stack,
@@ -651,7 +876,7 @@ app.post("/reset-password", async (req, res) => {
         });
         res.status(500).json({ 
             error: 'Internal server error',
-            details: error.message // Add error details for debugging
+            details: error.message 
         });
     }
 });
