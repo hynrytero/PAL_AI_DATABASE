@@ -186,7 +186,6 @@ app.use(bodyParser.json());
 app.post('/change-password', async (req, res) => {
     const { user_id, currentPassword, newPassword } = req.body;
 
-    // Input validation
     if (!user_id || !currentPassword || !newPassword) {
         return res.status(400).json({
             success: false,
@@ -195,7 +194,6 @@ app.post('/change-password', async (req, res) => {
     }
 
     try {
-        // First verify current password
         const verifyQuery = `
             SELECT password 
             FROM user_credentials 
@@ -203,7 +201,7 @@ app.post('/change-password', async (req, res) => {
         `;
 
         const verifyParams = [
-            { type: TYPES.Int, value: user_id }
+            { type: TYPES.Int, value: parseInt(user_id, 10) }  // Ensure user_id is an integer
         ];
 
         const results = await executeQuery(verifyQuery, verifyParams);
@@ -215,17 +213,15 @@ app.post('/change-password', async (req, res) => {
             });
         }
 
-        // Extract password from the value property
-        const storedHash = results[0]?.password?.value;
+        const storedHash = results[0].password?.trim() || '';
         if (!storedHash) {
-            console.error('Stored hash is undefined or null');
             return res.status(500).json({
                 success: false,
-                message: 'Error retrieving password data'
+                message: 'Invalid password data'
             });
         }
 
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, storedHash);
+        const isCurrentPasswordValid = await bcrypt.compare(currentPassword.trim(), storedHash);
 
         if (!isCurrentPasswordValid) {
             return res.status(401).json({
@@ -236,7 +232,15 @@ app.post('/change-password', async (req, res) => {
 
         // Hash new password
         const salt = await bcrypt.genSalt(10);
-        const newPasswordHash = await bcrypt.hash(newPassword, salt);
+        const newPasswordHash = await bcrypt.hash(newPassword.trim(), salt);
+
+        // Ensure the hash length doesn't exceed varchar(255)
+        if (newPasswordHash.length > 255) {
+            return res.status(400).json({
+                success: false,
+                message: 'Generated password hash is too long'
+            });
+        }
 
         // Update password
         const updateQuery = `
@@ -247,7 +251,7 @@ app.post('/change-password', async (req, res) => {
         `;
 
         const updateParams = [
-            { type: TYPES.Int, value: user_id },
+            { type: TYPES.Int, value: parseInt(user_id, 10) },
             { type: TYPES.VarChar, value: newPasswordHash }
         ];
 
@@ -279,8 +283,8 @@ app.post('/verify-email-change', async (req, res) => {
         `;
         
         const emailCheckParams = [
-            { type: TYPES.VarChar, value: newEmail },
-            { type: TYPES.Int, value: user_id }
+            { type: TYPES.VarChar, value: newEmail.trim() },
+            { type: TYPES.Int, value: parseInt(user_id, 10) }
         ];
 
         const emailResults = await executeQuery(emailCheckQuery, emailCheckParams);
@@ -301,7 +305,7 @@ app.post('/verify-email-change', async (req, res) => {
         `;
 
         const verifyParams = [
-            { type: TYPES.Int, value: user_id }
+            { type: TYPES.Int, value: parseInt(user_id, 10) }
         ];
 
         const results = await executeQuery(verifyQuery, verifyParams);
@@ -313,17 +317,15 @@ app.post('/verify-email-change', async (req, res) => {
             });
         }
 
-        // Extract password from the value property
-        const storedHash = results[0]?.password?.value;
+        const storedHash = results[0].password?.trim() || '';
         if (!storedHash) {
-            console.error('Stored hash is undefined or null in email verification');
             return res.status(500).json({
                 success: false,
-                message: 'Error retrieving password data'
+                message: 'Invalid password data'
             });
         }
 
-        const isPasswordValid = await bcrypt.compare(password, storedHash);
+        const isPasswordValid = await bcrypt.compare(password.trim(), storedHash);
 
         if (!isPasswordValid) {
             return res.status(401).json({
@@ -336,14 +338,14 @@ app.post('/verify-email-change', async (req, res) => {
         const otp = generateOTP();
         otpStorage.set(user_id.toString(), {
             otp,
-            newEmail,
+            newEmail: newEmail.trim(),
             timestamp: Date.now()
         });
 
         // Send OTP email
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
-            to: newEmail,
+            to: newEmail.trim(),
             subject: 'Email Change Verification',
             text: `Your OTP for email change is: ${otp}. This code will expire in 10 minutes.`
         });
