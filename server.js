@@ -533,7 +533,7 @@ app.post("/pre-signup", requestLimiter, async (req, res) => {
         // Generate verification code
         const verificationCode = generateVerificationCode();
         const codeExpiry = new Date();
-        codeExpiry.setMinutes(codeExpiry.getMinutes() + 15); // Code valid for 15 minutes
+        codeExpiry.setMinutes(codeExpiry.getMinutes() + 15); 
 
         // Store temporary registration details and verification code
         const tempRegData = {
@@ -600,7 +600,7 @@ app.post("/complete-signup", async (req, res) => {
 
         // Hash password
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(tempRegData.password, salt);
+        const hashedPassword = await bcrypt.hash(tempRegData.password.trim(), salt);
 
         const DEFAULT_ROLE_ID = 1;
 
@@ -906,7 +906,7 @@ app.post("/reset-password", async (req, res) => {
         
         const userId = userResults[0][0].value;
 
-        const saltRounds = 12;
+        const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
         const updatePasswordQuery = `
@@ -1008,7 +1008,6 @@ app.post("/login", async (req, res) => {
             return res.status(400).json({ message: "Missing required fields" });
         }
 
-        // Query that joins user_credentials and user_profiles
         const query = `
             SELECT 
                 uc.user_id,
@@ -1021,7 +1020,7 @@ app.post("/login", async (req, res) => {
             WHERE uc.username = @param0 OR up.email = @param0
         `;
         const params = [
-            { type: TYPES.NVarChar, value: identifier }
+            { type: TYPES.NVarChar, value: identifier.trim() }
         ];
 
         const result = await executeQuery(query, params);
@@ -1041,7 +1040,8 @@ app.post("/login", async (req, res) => {
         };
         console.log("User found, attempting password match");
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        // Trim password before comparison
+        const isMatch = await bcrypt.compare(password.trim(), user.password);
         console.log("Password match result:", isMatch);
 
         if (!isMatch) {
@@ -1049,7 +1049,6 @@ app.post("/login", async (req, res) => {
             return res.status(400).json({ message: "Invalid credentials" });
         }
 
-        // Return user data without password
         res.json({
             message: "Login successful",
             user: {
@@ -1060,8 +1059,7 @@ app.post("/login", async (req, res) => {
             }
         });
     } catch (err) {
-        // Log error without exposing sensitive details
-        console.error('Login error:', err.message);
+        console.error('Login error:', err);
         res.status(500).json({ message: "An error occurred during login" });
     }
 });
