@@ -1025,8 +1025,10 @@ app.post("/login", async (req, res) => {
         ];
 
         const result = await executeQuery(query, params);
+        console.log("Database query result:", result ? "Found user" : "No user found");
 
         if (!result || !result[0]) {
+            console.log("User not found in database");
             return res.status(400).json({ message: "Invalid credentials" });
         }
 
@@ -1037,12 +1039,13 @@ app.post("/login", async (req, res) => {
             roleId: result[0][3].value,
             email: result[0][4].value
         };
-     
+        console.log("User found, attempting password match");
+
         const isMatch = await bcrypt.compare(password, user.password);
-        
-        // Removed password logging
-        
+        console.log("Password match result:", isMatch);
+
         if (!isMatch) {
+            console.log("Password doesn't match");
             return res.status(400).json({ message: "Invalid credentials" });
         }
 
