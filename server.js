@@ -1004,6 +1004,10 @@ app.post("/login", async (req, res) => {
     try {
         const { identifier, password } = req.body;
 
+        if (!identifier || !password) {
+            return res.status(400).json({ message: "Missing required fields" });
+        }
+
         // Query that joins user_credentials and user_profiles
         const query = `
             SELECT 
@@ -1022,8 +1026,8 @@ app.post("/login", async (req, res) => {
 
         const result = await executeQuery(query, params);
 
-        if (result.length === 0) {
-            return res.status(400).json({ message: "User not found" });
+        if (!result || !result[0]) {
+            return res.status(400).json({ message: "Invalid credentials" });
         }
 
         const user = {
@@ -1035,8 +1039,8 @@ app.post("/login", async (req, res) => {
         };
      
         const isMatch = await bcrypt.compare(password, user.password);
-        console.log('Password sent: ',password);
-        console.log('Password in the datebase: ',user.password);
+        
+        // Removed password logging
         
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid credentials" });
@@ -1053,8 +1057,9 @@ app.post("/login", async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ message: "Server error" });
+        // Log error without exposing sensitive details
+        console.error('Login error:', err.message);
+        res.status(500).json({ message: "An error occurred during login" });
     }
 });
 
