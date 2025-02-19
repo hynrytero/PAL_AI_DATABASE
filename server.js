@@ -515,7 +515,7 @@ app.get('/api/scan-history/:userId', async (req, res) => {
 // Initial Signup Endpoint (Pre-registration)
 app.post("/pre-signup", requestLimiter, async (req, res) => {
     try {
-        const { username, email, password, firstname, lastname, age, gender, mobilenumber } = req.body;
+        const { username, email, password, firstname, lastname, birthdate, gender, mobilenumber } = req.body;
 
         // Check if email already exists
         const emailQuery = `
@@ -542,7 +542,7 @@ app.post("/pre-signup", requestLimiter, async (req, res) => {
             password,
             firstname,
             lastname,
-            age,
+            birthdate,  
             gender,
             mobilenumber,
             verificationCode,
@@ -606,38 +606,35 @@ app.post("/complete-signup", async (req, res) => {
 
         // Start a transaction to insert user credentials and profile
         const registrationQuery = `
-            BEGIN TRANSACTION;
-            
-            -- Insert user credentials
-            INSERT INTO user_credentials (username, role_id, password)
-            VALUES (@param0, @param1, @param2);
-            
-            -- Get the new user ID
-            DECLARE @newUserId INT = SCOPE_IDENTITY();
-            
-            -- Insert user profile
-            INSERT INTO user_profiles (
-                user_id, firstname, lastname, age, gender, email, mobile_number
-            ) VALUES (
-                @newUserId, @param3, @param4, @param5, @param6, @param7, @param8
-            );
-            
-            COMMIT TRANSACTION;
-            
-            SELECT @newUserId AS userId;
-        `;
+        BEGIN TRANSACTION;
+        
+        INSERT INTO user_credentials (username, role_id, password)
+        VALUES (@param0, @param1, @param2);
 
-        const registrationParams = [
-            { type: TYPES.NVarChar, value: tempRegData.username },
-            { type: TYPES.Int, value: DEFAULT_ROLE_ID },
-            { type: TYPES.NVarChar, value: hashedPassword },
-            { type: TYPES.NVarChar, value: tempRegData.firstname },
-            { type: TYPES.NVarChar, value: tempRegData.lastname },
-            { type: TYPES.Int, value: tempRegData.age ? parseInt(tempRegData.age, 10) : null },
-            { type: TYPES.NVarChar, value: tempRegData.gender },
-            { type: TYPES.NVarChar, value: email },
-            { type: TYPES.NVarChar, value: tempRegData.mobilenumber }
-        ];
+        DECLARE @newUserId INT = SCOPE_IDENTITY();
+        
+        INSERT INTO user_profiles (
+            user_id, firstname, lastname, birthdate, gender, email, mobile_number
+        ) VALUES (
+            @newUserId, @param3, @param4, @param5, @param6, @param7, @param8
+        );
+        
+        COMMIT TRANSACTION;
+        
+        SELECT @newUserId AS userId;
+    `;
+
+    const registrationParams = [
+        { type: TYPES.NVarChar, value: tempRegData.username },
+        { type: TYPES.Int, value: DEFAULT_ROLE_ID },
+        { type: TYPES.NVarChar, value: hashedPassword },
+        { type: TYPES.NVarChar, value: tempRegData.firstname },
+        { type: TYPES.NVarChar, value: tempRegData.lastname },
+        { type: TYPES.Date, value: new Date(tempRegData.birthdate) },
+        { type: TYPES.NVarChar, value: tempRegData.gender },
+        { type: TYPES.NVarChar, value: email },
+        { type: TYPES.NVarChar, value: tempRegData.mobilenumber }
+    ];
 
         const userResult = await executeQuery(registrationQuery, registrationParams);
         const userId = userResult[0][0].value;
@@ -942,30 +939,30 @@ app.post("/reset-password", async (req, res) => {
 // profile
 app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
-
+    
     try {
         const query = `
             SELECT 
-                user_profiles_id, 
-                user_id, 
-                firstname, 
-                lastname, 
-                age, 
-                gender, 
-                mobile_number, 
-                address_id, 
-                email, 
+                user_profiles_id,
+                user_id,
+                firstname,
+                lastname,
+                birthdate,
+                gender,
+                mobile_number,
+                address_id,
+                email,
                 profile_image,
-                created_at, 
-                updated_at 
-            FROM user_profiles 
+                created_at,
+                updated_at
+            FROM user_profiles
             WHERE user_id = @param0
         `;
-
+        
         const params = [
-            { 
-                type: TYPES.Int, 
-                value: parseInt(userId, 10) 
+            {
+                type: TYPES.Int,
+                value: parseInt(userId, 10)
             }
         ];
 
@@ -975,7 +972,6 @@ app.get('/api/profile/:userId', async (req, res) => {
         const results = await executeQuery(query, params);
 
         if (results.length > 0) {
-            // Transform the results from tedious format to object
             const userProfile = {};
             results[0].forEach(column => {
                 userProfile[column.metadata.colName] = column.value;
@@ -988,7 +984,7 @@ app.get('/api/profile/:userId', async (req, res) => {
                     lastname: userProfile.lastname,
                     email: userProfile.email,
                     contactNumber: userProfile.mobile_number,
-                    age: userProfile.age,
+                    birthdate: userProfile.birthdate,
                     gender: userProfile.gender,
                     image: userProfile.profile_image
                 }
