@@ -1033,9 +1033,11 @@ app.post("/login", async (req, res) => {
             roleId: result[0][3].value,
             email: result[0][4].value
         };
-
+     
         const isMatch = await bcrypt.compare(password, user.password);
-
+        console.log('Password sent: ',password);
+        console.log('Password in the datebase: ',user.password);
+        
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid credentials" });
         }
