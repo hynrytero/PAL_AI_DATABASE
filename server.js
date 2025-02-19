@@ -142,8 +142,6 @@ async function executeQuery(query, params = []) {
     }
 }
 
-
-
 // Initialize Google Cloud Storage
 const storage = new Storage({
     projectId: process.env.GOOGLE_CLOUD_PROJECT,
@@ -1377,7 +1375,7 @@ app.get("/", requestLimiter, (req, res) => {
 async function startServer() {
     try {
         // Start express server
-        const PORT = process.env.PORT || 5000;
+        const PORT = process.env.PORT || 8080;
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
