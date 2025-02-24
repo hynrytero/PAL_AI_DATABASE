@@ -185,8 +185,178 @@ const app = express();
 app.use(bodyParser.json());
 
 
-
 /*ENDPOINTS*/
+
+
+// Store notification for a user
+app.post('/store-notification', async (req, res) => {
+    const { user_id, title, body, data, icon, icon_bg_color, type } = req.body;
+  
+    if (!user_id || !title) {
+      return res.status(400).json({ error: 'User ID and title are required' });
+    }
+  
+    try {
+      const query = `
+        INSERT INTO user_notifications (user_id, title, body, icon, icon_bg_color, type, data)
+        VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: user_id },
+        { type: TYPES.NVarChar, value: title },
+        { type: TYPES.NVarChar, value: body || '' },
+        { type: TYPES.NVarChar, value: icon || 'bell' },
+        { type: TYPES.NVarChar, value: icon_bg_color || 'gray' },
+        { type: TYPES.NVarChar, value: type || 'general' },
+        { type: TYPES.NVarChar, value: data ? JSON.stringify(data) : null }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'Notification stored successfully' });
+    } catch (error) {
+      console.error('Error storing notification:', error);
+      res.status(500).json({ error: 'Failed to store notification' });
+    }
+  });
+  
+  // Fetch notifications for a user
+  app.get('/notifications/:userId', async (req, res) => {
+    const userId = req.params.userId;
+    
+    try {
+      const query = `
+        SELECT notification_id, title, body, icon, icon_bg_color as iconBgColor,
+        type, data, timestamp, read
+        FROM user_notifications
+        WHERE user_id = @param0
+        ORDER BY timestamp DESC
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: userId }
+      ];
+      
+      const results = await executeQuery(query, params);
+      
+      const notifications = results.map(row => {
+        return {
+          id: row.notification_id.value,
+          title: row.title.value,
+          subtitle: row.body.value,
+          icon: row.icon.value,
+          iconBgColor: row.iconBgColor.value,
+          iconColor: "white",
+          type: row.type.value,
+          timestamp: new Date(row.timestamp.value).getTime(),
+          read: row.read.value === true,
+          data: row.data.value ? JSON.parse(row.data.value) : {}
+        };
+      });
+      
+      res.status(200).json(notifications);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+  });
+  
+  // Mark notification as read
+  app.put('/notifications/:notificationId/read', async (req, res) => {
+    const notificationId = req.params.notificationId;
+    
+    try {
+      const query = `
+        UPDATE user_notifications
+        SET read = 1
+        WHERE notification_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: notificationId }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'Notification marked as read' });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      res.status(500).json({ error: 'Failed to mark notification as read' });
+    }
+  });
+  
+  // Mark all notifications as read for a user
+  app.put('/notifications/:userId/read-all', async (req, res) => {
+    const userId = req.params.userId;
+    
+    try {
+      const query = `
+        UPDATE user_notifications
+        SET read = 1
+        WHERE user_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: userId }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'All notifications marked as read' });
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      res.status(500).json({ error: 'Failed to mark all notifications as read' });
+    }
+  });
+  
+  // Delete a notification
+  app.delete('/notifications/:notificationId', async (req, res) => {
+    const notificationId = req.params.notificationId;
+    
+    try {
+      const query = `
+        DELETE FROM user_notifications
+        WHERE notification_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: notificationId }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'Notification deleted' });
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      res.status(500).json({ error: 'Failed to delete notification' });
+    }
+  });
+  
+  // Delete all notifications for a user
+  app.delete('/notifications/:userId/clear', async (req, res) => {
+    const userId = req.params.userId;
+    
+    try {
+      const query = `
+        DELETE FROM user_notifications
+        WHERE user_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: userId }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'All notifications cleared' });
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
+      res.status(500).json({ error: 'Failed to clear notifications' });
+    }
+  });
+
+
 
 /*TOKEN API*/
 // Register push token (modified to associate with user_id)
@@ -258,58 +428,84 @@ app.post('/notify', async (req, res) => {
     }
   
     try {
+      // Store the notification in the database regardless of push token
+      const storeQuery = `
+        INSERT INTO user_notifications (user_id, title, body, data, icon, icon_bg_color, type)
+        VALUES (@param0, @param1, @param2, @param3, @param4, @param5, @param6)
+      `;
+      
+      const storeParams = [
+        { type: TYPES.Int, value: user_id },
+        { type: TYPES.NVarChar, value: title },
+        { type: TYPES.NVarChar, value: body || '' },
+        { type: TYPES.NVarChar, value: data ? JSON.stringify(data) : null },
+        { type: TYPES.NVarChar, value: data?.icon || 'bell' },
+        { type: TYPES.NVarChar, value: data?.iconBgColor || 'gray' },
+        { type: TYPES.NVarChar, value: data?.type || 'general' }
+      ];
+      
+      await executeQuery(storeQuery, storeParams);
+      
       // Get the user's push token from database
-      const query = `
+      const tokenQuery = `
         SELECT push_token 
         FROM user_credentials 
         WHERE user_id = @param0 AND push_token IS NOT NULL
       `;
       
-      const params = [
+      const tokenParams = [
         { type: TYPES.Int, value: user_id }
       ];
       
-      const results = await executeQuery(query, params);
+      const results = await executeQuery(tokenQuery, tokenParams);
       
-      if (results.length === 0 || !results[0].push_token || !results[0].push_token.value) {
-        return res.status(404).json({ error: 'No push token found for this user' });
-      }
-      
-      const token = results[0].push_token.value;
-      
-      if (!Expo.isExpoPushToken(token)) {
-        return res.status(400).json({ error: 'Invalid Expo push token stored for user' });
-      }
+      // If user has a push token, also send via Expo
+      if (results.length > 0 && results[0].push_token && results[0].push_token.value) {
+        const token = results[0].push_token.value;
+        
+        if (Expo.isExpoPushToken(token)) {
+          const messages = [{
+            to: token,
+            sound: 'default',
+            title: title || 'New Notification',
+            body: body || 'You have a new notification',
+            data: data || {}
+          }];
   
-      const messages = [{
-        to: token,
-        sound: 'default',
-        title: title || 'New Notification',
-        body: body || 'You have a new notification',
-        data: data || {}
-      }];
+          const chunks = expo.chunkPushNotifications(messages);
+          const tickets = [];
   
-      const chunks = expo.chunkPushNotifications(messages);
-      const tickets = [];
-  
-      for (let chunk of chunks) {
-        try {
-          const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-          tickets.push(...ticketChunk);
-        } catch (error) {
-          console.error('Error sending chunk:', error);
+          for (let chunk of chunks) {
+            try {
+              const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+              tickets.push(...ticketChunk);
+            } catch (error) {
+              console.error('Error sending chunk:', error);
+            }
+          }
+          
+          res.status(200).json({ 
+            message: 'Notification sent and stored successfully',
+            pushedToDevice: true,
+            tickets 
+          });
+        } else {
+          res.status(200).json({ 
+            message: 'Notification stored successfully, but push token is invalid',
+            pushedToDevice: false
+          });
         }
+      } else {
+        res.status(200).json({ 
+          message: 'Notification stored successfully (no push token found)',
+          pushedToDevice: false
+        });
       }
-  
-      res.status(200).json({ 
-        message: 'Notification sent successfully',
-        tickets 
-      });
     } catch (error) {
-      console.error('Error sending notification:', error);
-      res.status(500).json({ error: 'Failed to send notification' });
+      console.error('Error processing notification:', error);
+      res.status(500).json({ error: 'Failed to process notification' });
     }
-});
+  });
 // Broadcast notification to all users
 app.post('/broadcast', async (req, res) => {
     const { title, body, data } = req.body;
