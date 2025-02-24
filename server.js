@@ -8,6 +8,10 @@ const { Storage } = require('@google-cloud/storage');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
+const { Expo } = require('expo-server-sdk');
+
+// Initialize Expo client
+const expo = new Expo();
 
 /*DATABASE*/
 const connectionPool = [];
@@ -181,6 +185,228 @@ const app = express();
 app.use(bodyParser.json());
 
 
+
+/*ENDPOINTS*/
+
+/*TOKEN API*/
+// Register push token (modified to associate with user_id)
+app.post('/token', async (req, res) => {
+    const { token, user_id } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    if (!token || !Expo.isExpoPushToken(token)) {
+      return res.status(400).json({ error: 'Invalid Expo push token' });
+    }
+  
+    try {
+      // First check if user exists and what their current token is
+      const checkQuery = `
+        SELECT push_token
+        FROM user_credentials 
+        WHERE user_id = @param0
+      `;
+      
+      const checkParams = [
+        { type: TYPES.Int, value: user_id }
+      ];
+      
+      const results = await executeQuery(checkQuery, checkParams);
+      
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Get current token (might be null)
+      const currentToken = results[0].push_token ? results[0].push_token.value : null;
+      
+      // If token is the same, no need to update
+      if (currentToken === token) {
+        return res.status(200).json({ message: 'Token already registered for this user' });
+      }
+      
+      // Update token regardless of whether it was null or had a different value
+      const updateQuery = `
+        UPDATE user_credentials 
+        SET push_token = @param0
+        WHERE user_id = @param1
+      `;
+      
+      const updateParams = [
+        { type: TYPES.VarChar, value: token },
+        { type: TYPES.Int, value: user_id }
+      ];
+      
+      await executeQuery(updateQuery, updateParams);
+      
+      res.status(200).json({ 
+        message: currentToken ? 'Push token updated successfully' : 'Push token registered successfully' 
+      });
+    } catch (error) {
+      console.error('Error registering/updating token:', error);
+      res.status(500).json({ error: 'Failed to register/update token' });
+    }
+});
+// Send notification to a specific user
+app.post('/notify', async (req, res) => {
+    const { user_id, title, body, data } = req.body;
+  
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+  
+    try {
+      // Get the user's push token from database
+      const query = `
+        SELECT push_token 
+        FROM user_credentials 
+        WHERE user_id = @param0 AND push_token IS NOT NULL
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: user_id }
+      ];
+      
+      const results = await executeQuery(query, params);
+      
+      if (results.length === 0 || !results[0].push_token || !results[0].push_token.value) {
+        return res.status(404).json({ error: 'No push token found for this user' });
+      }
+      
+      const token = results[0].push_token.value;
+      
+      if (!Expo.isExpoPushToken(token)) {
+        return res.status(400).json({ error: 'Invalid Expo push token stored for user' });
+      }
+  
+      const messages = [{
+        to: token,
+        sound: 'default',
+        title: title || 'New Notification',
+        body: body || 'You have a new notification',
+        data: data || {}
+      }];
+  
+      const chunks = expo.chunkPushNotifications(messages);
+      const tickets = [];
+  
+      for (let chunk of chunks) {
+        try {
+          const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+          tickets.push(...ticketChunk);
+        } catch (error) {
+          console.error('Error sending chunk:', error);
+        }
+      }
+  
+      res.status(200).json({ 
+        message: 'Notification sent successfully',
+        tickets 
+      });
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      res.status(500).json({ error: 'Failed to send notification' });
+    }
+});
+// Broadcast notification to all users
+app.post('/broadcast', async (req, res) => {
+    const { title, body, data } = req.body;
+  
+    try {
+      // Get all valid push tokens from the database
+      const query = `
+        SELECT push_token 
+        FROM user_credentials 
+        WHERE push_token IS NOT NULL
+      `;
+      
+      const results = await executeQuery(query, []);
+      
+      const tokens = results
+        .map(row => row.push_token.value)
+        .filter(token => token && Expo.isExpoPushToken(token));
+      
+      if (tokens.length === 0) {
+        return res.status(400).json({ error: 'No valid tokens registered' });
+      }
+  
+      const messages = tokens.map(token => ({
+        to: token,
+        sound: 'default',
+        title: title || 'Broadcast Notification',
+        body: body || 'You have a new broadcast notification',
+        data: data || {}
+      }));
+  
+      const chunks = expo.chunkPushNotifications(messages);
+      const tickets = [];
+  
+      for (let chunk of chunks) {
+        try {
+          const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+          tickets.push(...ticketChunk);
+        } catch (error) {
+          console.error('Error sending chunk:', error);
+        }
+      }
+  
+      res.status(200).json({ 
+        message: `Broadcast sent successfully to ${tokens.length} users`,
+        tickets 
+      });
+    } catch (error) {
+      console.error('Error sending broadcast:', error);
+      res.status(500).json({ error: 'Failed to send broadcast' });
+    }
+});
+
+
+// get scan history
+app.get('/api/scan-history/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        console.log('Fetching scans for userId:', userId);
+        const query = `
+            SELECT 
+                rls.rice_leaf_scan_id,
+                rls.scan_image,
+                rls.disease_confidence_score,
+                rls.created_at,
+                rld.rice_leaf_disease,
+                rld.description as disease_description,
+                rpm.description as medicine_description
+            FROM rice_leaf_scan rls
+            JOIN rice_leaf_disease rld ON rls.rice_leaf_disease_id = rld.rice_leaf_disease_id
+            LEFT JOIN rice_plant_medicine rpm ON rld.medicine_id = rpm.medicine_id
+            WHERE rls.user_id = @param0
+            ORDER BY rls.created_at DESC
+        `;
+
+        const params = [
+            { type: TYPES.Int, value: parseInt(userId) }
+        ];
+
+        const results = await executeQuery(query, params);
+        
+        const formattedResults = results.map(row => ({
+            id: row[0].value,
+            image: row[1].value,
+            confidence: Math.round(row[2].value * 100),
+            date: row[3].value,
+            disease: row[4].value,
+            diseaseDescription: row[5].value || 'No disease description available',
+            medicineDescription: row[6].value || 'No medicine information available'
+        }));
+
+        res.json(formattedResults);
+    } catch (error) {
+        console.error('Error fetching scan history:', error);
+        res.status(500).json({ error: 'Failed to fetch scan history' });
+    }
+});
+
 // change password & email
 app.post('/change-password', async (req, res) => {
     const { user_id, currentPassword, newPassword } = req.body;
@@ -270,7 +496,6 @@ app.post('/change-password', async (req, res) => {
         });
     }
 });
-
 app.post('/verify-email-change', async (req, res) => {
     const { user_id, password, newEmail } = req.body;
 
@@ -362,7 +587,6 @@ app.post('/verify-email-change', async (req, res) => {
         });
     }
 });
-
 app.post('/confirm-email-change', async (req, res) => {
     const { user_id, otp } = req.body;
 
@@ -460,53 +684,6 @@ app.post('/confirm-email-change', async (req, res) => {
             success: false,
             message: 'Internal server error during email change'
         });
-    }
-});
-
-
-/*ENDPOINTS*/
-
-// get scan history
-app.get('/api/scan-history/:userId', async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        console.log('Fetching scans for userId:', userId);
-        const query = `
-            SELECT 
-                rls.rice_leaf_scan_id,
-                rls.scan_image,
-                rls.disease_confidence_score,
-                rls.created_at,
-                rld.rice_leaf_disease,
-                rld.description as disease_description,
-                rpm.description as medicine_description
-            FROM rice_leaf_scan rls
-            JOIN rice_leaf_disease rld ON rls.rice_leaf_disease_id = rld.rice_leaf_disease_id
-            LEFT JOIN rice_plant_medicine rpm ON rld.medicine_id = rpm.medicine_id
-            WHERE rls.user_id = @param0
-            ORDER BY rls.created_at DESC
-        `;
-
-        const params = [
-            { type: TYPES.Int, value: parseInt(userId) }
-        ];
-
-        const results = await executeQuery(query, params);
-        
-        const formattedResults = results.map(row => ({
-            id: row[0].value,
-            image: row[1].value,
-            confidence: Math.round(row[2].value * 100),
-            date: row[3].value,
-            disease: row[4].value,
-            diseaseDescription: row[5].value || 'No disease description available',
-            medicineDescription: row[6].value || 'No medicine information available'
-        }));
-
-        res.json(formattedResults);
-    } catch (error) {
-        console.error('Error fetching scan history:', error);
-        res.status(500).json({ error: 'Failed to fetch scan history' });
     }
 });
 
@@ -708,7 +885,6 @@ app.post("/resend-verification-code", async (req, res) => {
         });
     }
 });
-
 
 /*FORGOT PASSWORD PROCESS*/
 app.post("/forgot-password", requestLimiter, async (req, res) => {
@@ -935,7 +1111,7 @@ app.post("/reset-password", async (req, res) => {
     }
 });
 
-// profile
+// get profile
 app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
     
@@ -996,7 +1172,6 @@ app.get('/api/profile/:userId', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to fetch user profile' });
     }
 });
-
 
 // Login endpoint
 app.post("/login", async (req, res) => {
