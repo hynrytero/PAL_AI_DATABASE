@@ -187,7 +187,7 @@ app.use(bodyParser.json());
 
 /*ENDPOINTS*/
 
-// Fetch notifications for a user - FIXED VERSION
+// Fetch notifications for a user 
 app.get('/notifications/:userId', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
     
@@ -238,33 +238,91 @@ app.get('/notifications/:userId', async (req, res) => {
     }
   });
 
-// Mark all notifications as read for a user - FIXED VERSION
-app.put('/notifications/:userId/read-all', async (req, res) => {
+// Mark all notifications as read or unread for a user
+app.put('/notifications/:userId/:status', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
+    const status = req.params.status; // 'read-all' or 'unread-all'
     
     if (isNaN(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
+    if (status !== 'read-all' && status !== 'unread-all') {
+      return res.status(400).json({ error: 'Invalid status parameter. Use read-all or unread-all' });
+    }
+    
     try {
+      const readValue = status === 'read-all' ? 1 : 0;
+      
       const query = `
         UPDATE user_notifications
-        SET [read] = 1
+        SET [read] = @param1
         WHERE user_id = @param0
       `;
       
       const params = [
-        { type: TYPES.Int, value: userId }
+        { type: TYPES.Int, value: userId },
+        { type: TYPES.Bit, value: readValue }
       ];
       
       await executeQuery(query, params);
       
-      res.status(200).json({ message: 'All notifications marked as read' });
+      const message = status === 'read-all' ? 
+        'All notifications marked as read' : 
+        'All notifications marked as unread';
+      
+      res.status(200).json({ message });
     } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-      res.status(500).json({ error: 'Failed to mark all notifications as read', details: error.message });
+      console.error(`Error marking all notifications as ${status === 'read-all' ? 'read' : 'unread'}:`, error);
+      res.status(500).json({ 
+        error: `Failed to mark all notifications as ${status === 'read-all' ? 'read' : 'unread'}`, 
+        details: error.message 
+      });
     }
-  });
+});
+
+// Mark notification as read or unread
+app.put('/notifications/:notificationId/:status', async (req, res) => {
+    const notificationId = parseInt(req.params.notificationId, 10);
+    const status = req.params.status; // 'read' or 'unread'
+    
+    if (isNaN(notificationId)) {
+      return res.status(400).json({ error: 'Invalid notification ID' });
+    }
+    
+    if (status !== 'read' && status !== 'unread') {
+      return res.status(400).json({ error: 'Invalid status parameter. Use read or unread' });
+    }
+    
+    try {
+      const readValue = status === 'read' ? 1 : 0;
+      
+      const query = `
+        UPDATE user_notifications
+        SET [read] = @param1
+        WHERE notification_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: notificationId },
+        { type: TYPES.Bit, value: readValue }
+      ];
+      
+      await executeQuery(query, params);
+      
+      const message = status === 'read' ? 
+        'Notification marked as read' : 
+        'Notification marked as unread';
+      
+      res.status(200).json({ message });
+    } catch (error) {
+      console.error(`Error marking notification as ${status}:`, error);
+      res.status(500).json({ 
+        error: `Failed to mark notification as ${status}`, 
+        details: error.message 
+      });
+    }
+});
 
 // Store notification for a user
 app.post('/store-notification', async (req, res) => {
@@ -298,34 +356,6 @@ app.post('/store-notification', async (req, res) => {
       res.status(500).json({ error: 'Failed to store notification' });
     }
   });
-
-// Mark notification as read
-app.put('/notifications/:notificationId/read', async (req, res) => {
-  const notificationId = parseInt(req.params.notificationId, 10);
-  
-  if (isNaN(notificationId)) {
-    return res.status(400).json({ error: 'Invalid notification ID' });
-  }
-  
-  try {
-    const query = `
-      UPDATE user_notifications
-      SET [read] = 1
-      WHERE notification_id = @param0
-    `;
-    
-    const params = [
-      { type: TYPES.Int, value: notificationId }
-    ];
-    
-    await executeQuery(query, params);
-    
-    res.status(200).json({ message: 'Notification marked as read' });
-  } catch (error) {
-    console.error('Error marking notification as read:', error);
-    res.status(500).json({ error: 'Failed to mark notification as read', details: error.message });
-  }
-});
   
 // Delete a notification
 app.delete('/notifications/:notificationId', async (req, res) => {
