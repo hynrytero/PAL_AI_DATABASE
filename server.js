@@ -187,6 +187,84 @@ app.use(bodyParser.json());
 
 /*ENDPOINTS*/
 
+// Fetch notifications for a user - FIXED VERSION
+app.get('/notifications/:userId', async (req, res) => {
+    const userId = parseInt(req.params.userId, 10);
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    
+    try {
+      const query = `
+        SELECT notification_id, title, body, icon, icon_bg_color,
+        type, data, timestamp, read
+        FROM user_notifications
+        WHERE user_id = @param0
+        ORDER BY timestamp DESC
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: userId }
+      ];
+      
+      const results = await executeQuery(query, params);
+      
+      const notifications = results.map(rowColumns => {
+        const row = {};
+        // Convert columns array to object with proper key-value pairs
+        rowColumns.forEach(column => {
+          row[column.metadata.colName] = column;
+        });
+        
+        return {
+          id: row.notification_id.value,
+          title: row.title.value,
+          subtitle: row.body ? row.body.value : '',
+          icon: row.icon ? row.icon.value : 'bell',
+          iconBgColor: row.icon_bg_color ? row.icon_bg_color.value : 'gray',
+          iconColor: "white",
+          type: row.type ? row.type.value : 'general',
+          timestamp: row.timestamp ? new Date(row.timestamp.value).getTime() : Date.now(),
+          read: row.read ? row.read.value === true : false,
+          data: row.data && row.data.value ? JSON.parse(row.data.value) : {}
+        };
+      });
+      
+      res.status(200).json(notifications);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      res.status(500).json({ error: 'Failed to fetch notifications', details: error.message });
+    }
+  });
+  
+// Mark all notifications as read for a user - FIXED VERSION
+app.put('/notifications/:userId/read-all', async (req, res) => {
+    const userId = parseInt(req.params.userId, 10);
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    
+    try {
+      const query = `
+        UPDATE user_notifications
+        SET read = 1
+        WHERE user_id = @param0
+      `;
+      
+      const params = [
+        { type: TYPES.Int, value: userId }
+      ];
+      
+      await executeQuery(query, params);
+      
+      res.status(200).json({ message: 'All notifications marked as read' });
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      res.status(500).json({ error: 'Failed to mark all notifications as read', details: error.message });
+    }
+  });
 
 // Store notification for a user
 app.post('/store-notification', async (req, res) => {
@@ -220,50 +298,9 @@ app.post('/store-notification', async (req, res) => {
       res.status(500).json({ error: 'Failed to store notification' });
     }
   });
-  
-  // Fetch notifications for a user
-  app.get('/notifications/:userId', async (req, res) => {
-    const userId = req.params.userId;
-    
-    try {
-      const query = `
-        SELECT notification_id, title, body, icon, icon_bg_color as iconBgColor,
-        type, data, timestamp, read
-        FROM user_notifications
-        WHERE user_id = @param0
-        ORDER BY timestamp DESC
-      `;
-      
-      const params = [
-        { type: TYPES.Int, value: userId }
-      ];
-      
-      const results = await executeQuery(query, params);
-      
-      const notifications = results.map(row => {
-        return {
-          id: row.notification_id.value,
-          title: row.title.value,
-          subtitle: row.body.value,
-          icon: row.icon.value,
-          iconBgColor: row.iconBgColor.value,
-          iconColor: "white",
-          type: row.type.value,
-          timestamp: new Date(row.timestamp.value).getTime(),
-          read: row.read.value === true,
-          data: row.data.value ? JSON.parse(row.data.value) : {}
-        };
-      });
-      
-      res.status(200).json(notifications);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      res.status(500).json({ error: 'Failed to fetch notifications' });
-    }
-  });
-  
-  // Mark notification as read
-  app.put('/notifications/:notificationId/read', async (req, res) => {
+
+// Mark notification as read
+app.put('/notifications/:notificationId/read', async (req, res) => {
     const notificationId = req.params.notificationId;
     
     try {
@@ -286,32 +323,8 @@ app.post('/store-notification', async (req, res) => {
     }
   });
   
-  // Mark all notifications as read for a user
-  app.put('/notifications/:userId/read-all', async (req, res) => {
-    const userId = req.params.userId;
-    
-    try {
-      const query = `
-        UPDATE user_notifications
-        SET read = 1
-        WHERE user_id = @param0
-      `;
-      
-      const params = [
-        { type: TYPES.Int, value: userId }
-      ];
-      
-      await executeQuery(query, params);
-      
-      res.status(200).json({ message: 'All notifications marked as read' });
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-      res.status(500).json({ error: 'Failed to mark all notifications as read' });
-    }
-  });
-  
-  // Delete a notification
-  app.delete('/notifications/:notificationId', async (req, res) => {
+// Delete a notification
+app.delete('/notifications/:notificationId', async (req, res) => {
     const notificationId = req.params.notificationId;
     
     try {
@@ -333,8 +346,8 @@ app.post('/store-notification', async (req, res) => {
     }
   });
   
-  // Delete all notifications for a user
-  app.delete('/notifications/:userId/clear', async (req, res) => {
+// Delete all notifications for a user
+app.delete('/notifications/:userId/clear', async (req, res) => {
     const userId = req.params.userId;
     
     try {
