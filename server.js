@@ -196,9 +196,10 @@ app.get('/notifications/:userId', async (req, res) => {
     }
     
     try {
+      // Note the square brackets around 'read' to escape the reserved keyword
       const query = `
-        SELECT notification_id, title, body, icon, icon_bg_color,
-        type, data, timestamp, read
+        SELECT notification_id, title, body, icon, icon_bg_color as iconBgColor,
+        type, data, timestamp, [read]
         FROM user_notifications
         WHERE user_id = @param0
         ORDER BY timestamp DESC
@@ -212,7 +213,6 @@ app.get('/notifications/:userId', async (req, res) => {
       
       const notifications = results.map(rowColumns => {
         const row = {};
-        // Convert columns array to object with proper key-value pairs
         rowColumns.forEach(column => {
           row[column.metadata.colName] = column;
         });
@@ -222,11 +222,11 @@ app.get('/notifications/:userId', async (req, res) => {
           title: row.title.value,
           subtitle: row.body ? row.body.value : '',
           icon: row.icon ? row.icon.value : 'bell',
-          iconBgColor: row.icon_bg_color ? row.icon_bg_color.value : 'gray',
+          iconBgColor: row.iconBgColor ? row.iconBgColor.value : 'gray',
           iconColor: "white",
           type: row.type ? row.type.value : 'general',
           timestamp: row.timestamp ? new Date(row.timestamp.value).getTime() : Date.now(),
-          read: row.read ? row.read.value === true : false,
+          read: row['read'] ? row['read'].value === true : false,
           data: row.data && row.data.value ? JSON.parse(row.data.value) : {}
         };
       });
@@ -237,7 +237,7 @@ app.get('/notifications/:userId', async (req, res) => {
       res.status(500).json({ error: 'Failed to fetch notifications', details: error.message });
     }
   });
-  
+
 // Mark all notifications as read for a user - FIXED VERSION
 app.put('/notifications/:userId/read-all', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
@@ -249,7 +249,7 @@ app.put('/notifications/:userId/read-all', async (req, res) => {
     try {
       const query = `
         UPDATE user_notifications
-        SET read = 1
+        SET [read] = 1
         WHERE user_id = @param0
       `;
       
@@ -301,27 +301,31 @@ app.post('/store-notification', async (req, res) => {
 
 // Mark notification as read
 app.put('/notifications/:notificationId/read', async (req, res) => {
-    const notificationId = req.params.notificationId;
+  const notificationId = parseInt(req.params.notificationId, 10);
+  
+  if (isNaN(notificationId)) {
+    return res.status(400).json({ error: 'Invalid notification ID' });
+  }
+  
+  try {
+    const query = `
+      UPDATE user_notifications
+      SET [read] = 1
+      WHERE notification_id = @param0
+    `;
     
-    try {
-      const query = `
-        UPDATE user_notifications
-        SET read = 1
-        WHERE notification_id = @param0
-      `;
-      
-      const params = [
-        { type: TYPES.Int, value: notificationId }
-      ];
-      
-      await executeQuery(query, params);
-      
-      res.status(200).json({ message: 'Notification marked as read' });
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-      res.status(500).json({ error: 'Failed to mark notification as read' });
-    }
-  });
+    const params = [
+      { type: TYPES.Int, value: notificationId }
+    ];
+    
+    await executeQuery(query, params);
+    
+    res.status(200).json({ message: 'Notification marked as read' });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    res.status(500).json({ error: 'Failed to mark notification as read', details: error.message });
+  }
+});
   
 // Delete a notification
 app.delete('/notifications/:notificationId', async (req, res) => {
