@@ -16,7 +16,6 @@ const expo = new Expo();
 /*DATABASE*/
 const connectionPool = [];
 const MAX_POOL_SIZE = 10;
-
 // Database Connection
 async function createNewConnection() {
     try {
@@ -64,7 +63,6 @@ async function createNewConnection() {
         throw error;
     }
 }
-
 // Get an available connection from the pool
 async function getConnection() {
     // Remove closed connections from the pool
@@ -101,7 +99,6 @@ async function getConnection() {
         }, 100);
     });
 }
-
 // Modified executeQuery function
 async function executeQuery(query, params = []) {
     let connection;
@@ -146,6 +143,8 @@ async function executeQuery(query, params = []) {
     }
 }
 
+
+/*CLOUD STORAGE*/
 // Initialize Google Cloud Storage
 const storage = new Storage({
     projectId: process.env.GOOGLE_CLOUD_PROJECT,
@@ -153,13 +152,8 @@ const storage = new Storage({
 const bucket_scan = storage.bucket(process.env.BUCKET_NAME_SCAN);
 const bucket_profile = storage.bucket(process.env.BUCKET_NAME_PROFILE);
 
-// Rate Limiter
-const requestLimiter = rateLimit({ // try to apply this middleware
-    windowMs: 10 * 60 * 1000, 
-    max: 30,
-    message: 'Too many request attempts, please try again later'
-});
 
+/*NODEMAILER*/
 // Email configuration
 const transporter = nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE,
@@ -168,12 +162,18 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASSWORD
     }
 });
-
 // Verification Codes Storage 
 const verificationCodes = new Map();
 const passwordResetCodes = new Map();
 const otpStorage = new Map();
 
+
+// Rate Limiter
+const requestLimiter = rateLimit({ // try to apply this middleware
+    windowMs: 10 * 60 * 1000, 
+    max: 30,
+    message: 'Too many request attempts, please try again later'
+});
 // Generate a 6-digit verification code
 function generateVerificationCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -185,8 +185,7 @@ const app = express();
 app.use(bodyParser.json());
 
 
-/*ENDPOINTS*/
-
+/*NOTIFICATION*/
 // Fetch notifications for a user 
 app.get('/notifications/:userId', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
@@ -237,9 +236,8 @@ app.get('/notifications/:userId', async (req, res) => {
       res.status(500).json({ error: 'Failed to fetch notifications', details: error.message });
     }
   });
-
 // Mark all notifications as read or unread for a user
-app.put('/notifications/:userId/:status', async (req, res) => {
+app.put('/notifications-all/:userId/:status', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
     const status = req.params.status; // 'read-all' or 'unread-all'
     
@@ -280,9 +278,8 @@ app.put('/notifications/:userId/:status', async (req, res) => {
       });
     }
 });
-
 // Mark notification as read or unread
-app.put('/notifications/:notificationId/:status', async (req, res) => {
+app.put('/notifications-user/:notificationId/:status', async (req, res) => {
     const notificationId = parseInt(req.params.notificationId, 10);
     const status = req.params.status; // 'read' or 'unread'
     
@@ -323,7 +320,6 @@ app.put('/notifications/:notificationId/:status', async (req, res) => {
       });
     }
 });
-
 // Store notification for a user
 app.post('/store-notification', async (req, res) => {
     const { user_id, title, body, data, icon, icon_bg_color, type } = req.body;
@@ -356,7 +352,6 @@ app.post('/store-notification', async (req, res) => {
       res.status(500).json({ error: 'Failed to store notification' });
     }
   });
-  
 // Delete a notification
 app.delete('/notifications/:notificationId', async (req, res) => {
     const notificationId = req.params.notificationId;
@@ -379,7 +374,6 @@ app.delete('/notifications/:notificationId', async (req, res) => {
       res.status(500).json({ error: 'Failed to delete notification' });
     }
   });
-  
 // Delete all notifications for a user
 app.delete('/notifications/:userId/clear', async (req, res) => {
     const userId = req.params.userId;
@@ -404,8 +398,7 @@ app.delete('/notifications/:userId/clear', async (req, res) => {
   });
 
 
-
-/*TOKEN API*/
+/*PUSH NOTIFICATION*/
 // Register push token (modified to associate with user_id)
 app.post('/token', async (req, res) => {
     const { token, user_id } = req.body;
@@ -606,6 +599,7 @@ app.post('/broadcast', async (req, res) => {
 });
 
 
+/*HISTORY*/
 // get scan history
 app.get('/api/scan-history/:userId', async (req, res) => {
     try {
@@ -650,6 +644,8 @@ app.get('/api/scan-history/:userId', async (req, res) => {
     }
 });
 
+
+/*CHANGE PASSWORD PROCESS*/
 // change password & email
 app.post('/change-password', async (req, res) => {
     const { user_id, currentPassword, newPassword } = req.body;
@@ -930,6 +926,7 @@ app.post('/confirm-email-change', async (req, res) => {
     }
 });
 
+
 /*SIGNUP PROCESS*/
 // Initial Signup Endpoint (Pre-registration)
 app.post("/pre-signup", requestLimiter, async (req, res) => {
@@ -998,7 +995,6 @@ app.post("/pre-signup", requestLimiter, async (req, res) => {
         });
     }
 });
-
 // Complete Signup with Verification Code
 app.post("/complete-signup", async (req, res) => {
     try {
@@ -1074,7 +1070,6 @@ app.post("/complete-signup", async (req, res) => {
         });
     }
 });
-
 // Resend Verification Code Endpoint
 app.post("/resend-verification-code", async (req, res) => {
     try {
@@ -1128,6 +1123,7 @@ app.post("/resend-verification-code", async (req, res) => {
         });
     }
 });
+
 
 /*FORGOT PASSWORD PROCESS*/
 app.post("/forgot-password", requestLimiter, async (req, res) => {
@@ -1190,7 +1186,6 @@ app.post("/forgot-password", requestLimiter, async (req, res) => {
         });
     }
 });
-
 app.post("/verify-otp", async (req, res) => {
     try {
         const { email, otp } = req.body;
@@ -1237,7 +1232,6 @@ app.post("/verify-otp", async (req, res) => {
         });
     }
 });
-
 // Resend Password Reset OTP Endpoint
 app.post("/resend-password-otp", requestLimiter, async (req, res) => {
     try {
@@ -1299,7 +1293,6 @@ app.post("/resend-password-otp", requestLimiter, async (req, res) => {
         });
     }
 });
-
 // Change Password
 app.post("/reset-password", async (req, res) => {
     const { email, newPassword } = req.body;
@@ -1354,6 +1347,8 @@ app.post("/reset-password", async (req, res) => {
     }
 });
 
+
+/*PROFILE PROCESS*/
 // get profile
 app.get('/api/profile/:userId', async (req, res) => {
     const { userId } = req.params;
@@ -1415,96 +1410,6 @@ app.get('/api/profile/:userId', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to fetch user profile' });
     }
 });
-
-// Login endpoint
-app.post("/login", async (req, res) => {
-    try {
-        const { identifier, password } = req.body;
-
-        if (!identifier || !password) {
-            return res.status(400).json({ message: "Missing required fields" });
-        }
-
-        const query = `
-            SELECT 
-                uc.user_id,
-                uc.username,
-                uc.password,
-                uc.role_id,
-                up.email
-            FROM user_credentials uc
-            LEFT JOIN user_profiles up ON uc.user_id = up.user_id
-            WHERE uc.username = @param0 OR up.email = @param0
-        `;
-        const params = [
-            { type: TYPES.NVarChar, value: identifier.trim() }
-        ];
-
-        const result = await executeQuery(query, params);
-        console.log("Database query result:", result ? "Found user" : "No user found");
-
-        if (!result || !result[0]) {
-            console.log("User not found in database");
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
-
-        const user = {
-            id: result[0][0].value,
-            username: result[0][1].value,
-            password: result[0][2].value,
-            roleId: result[0][3].value,
-            email: result[0][4].value
-        };
-        console.log("User found, attempting password match");
-
-        // Trim password before comparison
-        const isMatch = await bcrypt.compare(password.trim(), user.password);
-        console.log("Password match result:", isMatch);
-
-        if (!isMatch) {
-            console.log("Password doesn't match");
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
-
-        res.json({
-            message: "Login successful",
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                roleId: user.roleId
-            }
-        });
-    } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ message: "An error occurred during login" });
-    }
-});
-
-// Upload endpoint
-app.post('/upload', multer().single('image'), async (req, res) => {
-    try {
-        const file = req.file;
-        const fileName = `${Date.now()}-${file.originalname}`;
-        
-        const blob = bucket_scan.file(fileName);
-        const blobStream = blob.createWriteStream();
-
-        blobStream.on('finish', async () => {
-            const publicUrl = `https://storage.googleapis.com/${bucket_scan.name}/${fileName}`;
-            res.status(200).json({ imageUrl: publicUrl });
-        });
-
-        blobStream.on('error', (err) => {
-            res.status(500).json({ error: 'Upload failed', details: err.message });
-        });
-
-        blobStream.end(file.buffer);
-    } catch (error) {
-        res.status(500).json({ error: 'Upload failed', details: error.message });
-    }
-});
-
 app.post('/upload-profile', multer().single('image'), async (req, res) => {
     try {
         const file = req.file;
@@ -1527,7 +1432,6 @@ app.post('/upload-profile', multer().single('image'), async (req, res) => {
         res.status(500).json({ error: 'Upload failed', details: error.message });
     }
 });
-
 app.put('/api/profile/update', async (req, res) => {
     try {
         const { userId, firstname, lastname, birthdate, contactNumber, image } = req.body;
@@ -1611,28 +1515,31 @@ app.put('/api/profile/update', async (req, res) => {
     }
 });
 
-// Check Connection Endpoint
-app.get('/check', async (req, res) => {
-    try {
-        const query = 'SELECT GETUTCDATE() as currentDate';
-        const result = await executeQuery(query);
-        
-        const currentDate = result[0][0].value; // Extract date from Tedious result
 
-        res.status(200).json({
-            status: 'Connected',
-            message: 'Database connection successful',
-            currentDate: new Date(currentDate).toISOString()
+/*SCAN PROCESS*/
+// Upload endpoint
+app.post('/upload', multer().single('image'), async (req, res) => {
+    try {
+        const file = req.file;
+        const fileName = `${Date.now()}-${file.originalname}`;
+        
+        const blob = bucket_scan.file(fileName);
+        const blobStream = blob.createWriteStream();
+
+        blobStream.on('finish', async () => {
+            const publicUrl = `https://storage.googleapis.com/${bucket_scan.name}/${fileName}`;
+            res.status(200).json({ imageUrl: publicUrl });
         });
-    } catch (err) {
-        res.status(500).json({
-            status: 'Failed',
-            message: 'Database connection error',
-            error: err.message
+
+        blobStream.on('error', (err) => {
+            res.status(500).json({ error: 'Upload failed', details: err.message });
         });
+
+        blobStream.end(file.buffer);
+    } catch (error) {
+        res.status(500).json({ error: 'Upload failed', details: error.message });
     }
 });
-
 // Scan endpoint
 app.post("/save", async (req, res) => {
     try {
@@ -1717,7 +1624,6 @@ app.post("/save", async (req, res) => {
         });
     } 
 });
-
 // Disease Info Endpoint
 app.get('/disease-info/:classNumber', async (req, res) => {
     try {
@@ -1777,6 +1683,75 @@ app.get('/disease-info/:classNumber', async (req, res) => {
     }
 });
 
+
+/*LOGIN PROCESS*/
+// Login endpoint
+app.post("/login", async (req, res) => {
+    try {
+        const { identifier, password } = req.body;
+
+        if (!identifier || !password) {
+            return res.status(400).json({ message: "Missing required fields" });
+        }
+
+        const query = `
+            SELECT 
+                uc.user_id,
+                uc.username,
+                uc.password,
+                uc.role_id,
+                up.email
+            FROM user_credentials uc
+            LEFT JOIN user_profiles up ON uc.user_id = up.user_id
+            WHERE uc.username = @param0 OR up.email = @param0
+        `;
+        const params = [
+            { type: TYPES.NVarChar, value: identifier.trim() }
+        ];
+
+        const result = await executeQuery(query, params);
+        console.log("Database query result:", result ? "Found user" : "No user found");
+
+        if (!result || !result[0]) {
+            console.log("User not found in database");
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const user = {
+            id: result[0][0].value,
+            username: result[0][1].value,
+            password: result[0][2].value,
+            roleId: result[0][3].value,
+            email: result[0][4].value
+        };
+        console.log("User found, attempting password match");
+
+        // Trim password before comparison
+        const isMatch = await bcrypt.compare(password.trim(), user.password);
+        console.log("Password match result:", isMatch);
+
+        if (!isMatch) {
+            console.log("Password doesn't match");
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        res.json({
+            message: "Login successful",
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                roleId: user.roleId
+            }
+        });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ message: "An error occurred during login" });
+    }
+});
+
+
+/*PUBLIC ENPOINTS*/
 // Home endpoint
 app.get("/", requestLimiter, (req, res) => {
     res.json({
@@ -1785,10 +1760,30 @@ app.get("/", requestLimiter, (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+// Check Connection Endpoint
+app.get('/check', async (req, res) => {
+    try {
+        const query = 'SELECT GETUTCDATE() as currentDate';
+        const result = await executeQuery(query);
+        
+        const currentDate = result[0][0].value; // Extract date from Tedious result
+
+        res.status(200).json({
+            status: 'Connected',
+            message: 'Database connection successful',
+            currentDate: new Date(currentDate).toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'Failed',
+            message: 'Database connection error',
+            error: err.message
+        });
+    }
+});
 
 
 /*SERVER CONFIG*/
-
 // Start server
 async function startServer() {
     try {
@@ -1802,7 +1797,6 @@ async function startServer() {
         process.exit(1);
     }
 }
-
 // Shutdown handler
 process.on('SIGINT', async () => {
     try {
